@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+ROOT="$(repo_root)"
+CONTAINERS_CONF_SOURCE="$ROOT/config/containers/containers.conf"
+CONTAINERS_CONF_TARGET="${XDG_CONFIG_HOME:-$HOME/.config}/containers/containers.conf"
+MACHINE_NAME="${1:-podman-machine-default}"
+
+require_macos
+require_homebrew
+require_clt
+
+echo "==> Ensuring Homebrew packages are installed"
+"$ROOT/scripts/macos/brewfile-install"
+
+echo "==> Checking podman"
+if ! command -v podman >/dev/null 2>&1; then
+  echo "podman is not installed correctly"
+  exit 1
+fi
+
+echo "==> Checking source containers.conf"
+if [[ ! -f "$CONTAINERS_CONF_SOURCE" ]]; then
+  echo "Missing source config: $CONTAINERS_CONF_SOURCE"
+  exit 1
+fi
+
+echo "==> Deploying containers.conf"
+mkdir -p "$(dirname "$CONTAINERS_CONF_TARGET")"
+if [[ ! -f "$CONTAINERS_CONF_TARGET" ]] || ! cmp -s "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"; then
+  cp "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"
+fi
+
+echo "==> Ensuring Podman machine exists"
+if ! podman machine inspect "$MACHINE_NAME" >/dev/null 2>&1; then
+  podman machine init --now "$MACHINE_NAME"
+else
+  echo "==> Applying Podman machine preferences where supported"
+  podman machine set --cpus 4 "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --memory 4096 "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --disk-size 60 "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --rootful=false "$MACHINE_NAME" >/dev/null 2>&1 || true
+
+  echo "==> Starting Podman machine if needed"
+  if ! podman info >/dev/null 2>&1; then
+    podman machine start "$MACHINE_NAME"
+  fi
+fi
+
+echo "==> Verifying Podman"
+podman info >/dev/null
+
+echo "==> Podman is ready"

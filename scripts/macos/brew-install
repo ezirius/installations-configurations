@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+require_macos
+
+echo "==> Checking Xcode Command Line Tools"
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "==> Xcode Command Line Tools are not installed"
+  echo "==> Triggering Apple installer"
+  xcode-select --install || true
+  echo "==> Finish the Command Line Tools installation, then re-run this script"
+  exit 1
+fi
+
+echo "==> Loading Homebrew into PATH if already installed"
+load_homebrew_shellenv
+
+if command -v brew >/dev/null 2>&1; then
+  echo "==> Homebrew already installed"
+  brew --version
+  exit 0
+fi
+
+echo "==> Validating administrator access for Homebrew installation"
+sudo -v
+
+echo "==> Keeping sudo session alive during Homebrew installation"
+(
+  while true; do
+    sudo -n true
+    sleep 30
+  done
+) >/dev/null 2>&1 &
+SUDO_KEEPALIVE_PID="$!"
+trap 'kill "$SUDO_KEEPALIVE_PID" >/dev/null 2>&1 || true' EXIT
+
+echo "==> Installing Homebrew"
+NONINTERACTIVE=1 /bin/bash -c \
+  "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+echo "==> Loading Homebrew into PATH"
+load_homebrew_shellenv
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew installation finished, but brew is still not on PATH"
+  echo "Apple Silicon expected path: /opt/homebrew/bin/brew"
+  echo "Intel expected path: /usr/local/bin/brew"
+  exit 1
+fi
+
+echo "==> Verifying Homebrew"
+brew --version
+
+echo "==> Homebrew is ready"

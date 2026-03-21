@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "==> podman version"
+podman version
+echo
+echo "==> podman machine list"
+podman machine list
+echo
+echo "==> podman info"
+podman info
+echo
+echo "==> test container"
+podman run --rm docker.io/library/alpine:latest echo "hello from podman"

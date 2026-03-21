@@ -1,0 +1,4 @@
+brew "chezmoi"
+brew "podman"
+brew "podman-compose"
+cask "podman-desktop"

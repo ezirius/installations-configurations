@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+ROOT="$(repo_root)"
+BREWFILE="${1:-$ROOT/config/brew/Brewfile}"
+
+require_macos
+require_homebrew
+require_clt
+
+echo "==> Checking Brewfile"
+if [[ ! -f "$BREWFILE" ]]; then
+  echo "Brewfile not found: $BREWFILE"
+  exit 1
+fi
+
+echo "==> Checking Brewfile state"
+if brew bundle check --file="$BREWFILE"; then
+  echo "Brewfile already satisfied"
+else
+  echo "==> Applying Brewfile"
+  brew bundle install --file="$BREWFILE"
+fi
+
+echo "==> Brewfile applied successfully"
