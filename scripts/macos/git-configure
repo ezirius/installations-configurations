@@ -1,0 +1,433 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+NAME="${GIT_USER_NAME:-Ezirius}"
+EMAIL="${GIT_USER_EMAIL:-66864416+ezirius@users.noreply.github.com}"
+SSH_CONFIG_PATH="${GITHUB_SSH_CONFIG_PATH:-$HOME/.ssh/config}"
+SSH_DIR="$(dirname "$SSH_CONFIG_PATH")"
+ALLOWED_SIGNERS_PATH="${GIT_ALLOWED_SIGNERS_PATH:-$HOME/.ssh/allowed_signers}"
+ONEPASSWORD_AGENT_SOCK="${ONEPASSWORD_AGENT_SOCK:-$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock}"
+GITHUB_HOSTNAME="${GITHUB_SSH_HOSTNAME:-github.com}"
+GITHUB_USER="${GITHUB_SSH_USER:-git}"
+GITHUB_OWNER="${GITHUB_REPO_OWNER:-ezirius}"
+TARGET_HOST="${GIT_CONFIG_HOST:-}"
+TARGET_REPO="${GIT_CONFIG_REPO:-}"
+REPO_ROOT_OVERRIDE="${GIT_CONFIG_REPO_ROOT:-}"
+CONFIG_REPO_ROOT="$(repo_root)"
+
+HOST_NAME=""
+HOST_CONFIG_PATH=""
+REPO_ROOT=""
+REPO_NAME=""
+REMOTE_URL=""
+AUTH_KEY_NAME=""
+AUTH_PUBLIC_KEY=""
+SIGN_KEY_NAME=""
+SIGN_PUBLIC_KEY=""
+AUTH_PUBLIC_KEY_PATH=""
+SIGN_PUBLIC_KEY_PATH=""
+GITHUB_HOST_ALIAS=""
+TARGET_REMOTE_URL=""
+SSH_BLOCK_START=""
+SSH_BLOCK_END=""
+SIGNERS_BLOCK_START=""
+SIGNERS_BLOCK_END=""
+LAST_FILE_CHANGE=""
+
+print_step() {
+  echo "==> $1"
+}
+
+normalize_name() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-'
+}
+
+ensure_directory() {
+  mkdir -p "$1"
+  chmod 700 "$1"
+}
+
+set_managed_block() {
+  local target_path="$1"
+  local block_start="$2"
+  local block_end="$3"
+  local block_content="$4"
+  local temp_file
+  local existing_file="0"
+
+  temp_file="$(mktemp)"
+
+  if [[ -f "$target_path" ]]; then
+    existing_file="1"
+    python3 - "$target_path" "$temp_file" "$block_start" "$block_end" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+start = sys.argv[3]
+end = sys.argv[4]
+
+lines = source.read_text().splitlines()
+result = []
+inside = False
+
+for line in lines:
+    if line == start:
+        inside = True
+        continue
+    if inside and line == end:
+        inside = False
+        continue
+    if not inside:
+        result.append(line)
+
+if inside:
+    raise SystemExit(f"managed block start found without end in {source}")
+
+destination.write_text("\n".join(result).rstrip("\n") + ("\n" if result else ""))
+PY
+  fi
+
+  {
+    cat "$temp_file"
+    printf '%s\n' "$block_start"
+    printf '%s\n' "$block_content"
+    printf '%s\n' "$block_end"
+  } > "$temp_file.rendered"
+
+  if [[ -f "$target_path" ]] && cmp -s "$target_path" "$temp_file.rendered"; then
+    LAST_FILE_CHANGE=""
+    rm -f "$temp_file" "$temp_file.rendered"
+    return
+  fi
+
+  if [[ "$existing_file" == "1" ]]; then
+    LAST_FILE_CHANGE="Updated"
+  else
+    LAST_FILE_CHANGE="Created"
+  fi
+
+  mv "$temp_file.rendered" "$target_path"
+
+  rm -f "$temp_file"
+}
+
+detect_host_name() {
+  if [[ -n "$TARGET_HOST" ]]; then
+    HOST_NAME="$(normalize_name "$TARGET_HOST")"
+    return
+  fi
+
+  if command -v scutil >/dev/null 2>&1 && scutil --get ComputerName >/dev/null 2>&1; then
+    HOST_NAME="$(normalize_name "$(scutil --get ComputerName)")"
+  else
+    HOST_NAME="$(normalize_name "$(hostname -s)")"
+  fi
+}
+
+detect_repo_root() {
+  if [[ -n "$REPO_ROOT_OVERRIDE" ]]; then
+    REPO_ROOT="$REPO_ROOT_OVERRIDE"
+    return
+  fi
+
+  if git -C "$PWD" rev-parse --show-toplevel >/dev/null 2>&1; then
+    REPO_ROOT="$(git -C "$PWD" rev-parse --show-toplevel)"
+  else
+    fail "Run scripts/macos/git-configure from inside the git repository you want to configure"
+  fi
+}
+
+detect_repo_name() {
+  if [[ -n "$TARGET_REPO" ]]; then
+    REPO_NAME="$(normalize_name "$TARGET_REPO")"
+    return
+  fi
+
+  REPO_NAME="$(normalize_name "$(basename "$REPO_ROOT")")"
+}
+
+load_host_config() {
+  local entry_type
+  local field1
+  local field2
+  local field3
+
+  HOST_CONFIG_PATH="$CONFIG_REPO_ROOT/config/git/${HOST_NAME}.conf"
+  if [[ ! -f "$HOST_CONFIG_PATH" ]]; then
+    fail "Host key config not found: $HOST_CONFIG_PATH"
+  fi
+
+  while IFS='|' read -r entry_type field1 field2 field3; do
+    [[ -z "$entry_type" ]] && continue
+    [[ "$entry_type" == \#* ]] && continue
+
+    case "$entry_type" in
+      sign)
+        SIGN_KEY_NAME="$field1"
+        SIGN_PUBLIC_KEY="$field2"
+        ;;
+      repo)
+        if [[ "$field1" == "$REPO_NAME" ]]; then
+          AUTH_KEY_NAME="$field2"
+          AUTH_PUBLIC_KEY="$field3"
+        fi
+        ;;
+      *)
+        fail "Unsupported entry type '$entry_type' in $HOST_CONFIG_PATH"
+        ;;
+    esac
+  done < "$HOST_CONFIG_PATH"
+
+  [[ -n "$SIGN_KEY_NAME" ]] || fail "No sign key configured for host '$HOST_NAME' in $HOST_CONFIG_PATH"
+  [[ -n "$SIGN_PUBLIC_KEY" ]] || fail "No sign public key configured for host '$HOST_NAME' in $HOST_CONFIG_PATH"
+  [[ -n "$AUTH_KEY_NAME" ]] || fail "No repo auth key configured for repo '$REPO_NAME' on host '$HOST_NAME' in $HOST_CONFIG_PATH"
+  [[ -n "$AUTH_PUBLIC_KEY" ]] || fail "No repo auth public key configured for repo '$REPO_NAME' on host '$HOST_NAME' in $HOST_CONFIG_PATH"
+}
+
+write_public_key_file() {
+  local key_name="$1"
+  local public_key="$2"
+  local target_path="$SSH_DIR/${key_name}.pub"
+  local existing_file="0"
+  local temp_file
+
+  temp_file="$(mktemp)"
+
+  if [[ -f "$target_path" ]]; then
+    existing_file="1"
+  fi
+
+  printf '%s\n' "$public_key" > "$temp_file"
+
+  if [[ -f "$target_path" ]] && cmp -s "$target_path" "$temp_file"; then
+    LAST_FILE_CHANGE=""
+    rm -f "$temp_file"
+    printf '%s' "$target_path"
+    return
+  fi
+
+  if [[ "$existing_file" == "1" ]]; then
+    LAST_FILE_CHANGE="Updated"
+  else
+    LAST_FILE_CHANGE="Created"
+  fi
+
+  mv "$temp_file" "$target_path"
+  chmod 644 "$target_path"
+  printf '%s' "$target_path"
+}
+
+derive_remote_url() {
+  if git -C "$REPO_ROOT" remote get-url origin >/dev/null 2>&1; then
+    REMOTE_URL="$(git -C "$REPO_ROOT" remote get-url origin)"
+  else
+    REMOTE_URL="git@${GITHUB_HOSTNAME}:${GITHUB_OWNER}/${REPO_NAME}.git"
+  fi
+
+  TARGET_REMOTE_URL="$(python3 - "$REMOTE_URL" "$GITHUB_HOST_ALIAS" "$GITHUB_OWNER" "$REPO_NAME" <<'PY'
+import re
+import sys
+
+remote = sys.argv[1]
+alias = sys.argv[2]
+owner = sys.argv[3]
+repo = sys.argv[4]
+
+scp = re.match(r'^(?:.+@)?[^:]+:(.+)$', remote)
+https = re.match(r'^https://[^/]+/(.+)$', remote)
+
+if scp:
+    path = scp.group(1)
+elif https:
+    path = https.group(1)
+else:
+    path = f"{owner}/{repo}.git"
+
+if not path.endswith('.git'):
+    path += '.git'
+
+print(f"git@{alias}:{path}")
+PY
+  )"
+}
+
+write_ssh_config() {
+  local ssh_block
+
+  if [[ -f "$SSH_CONFIG_PATH" ]]; then
+    if grep -Eq "^Host([[:space:]]+[^[:space:]]+)*[[:space:]]+${GITHUB_HOST_ALIAS}([[:space:]]|$)" "$SSH_CONFIG_PATH"; then
+      if ! grep -Fq "$SSH_BLOCK_START" "$SSH_CONFIG_PATH"; then
+        fail "A custom Host $GITHUB_HOST_ALIAS entry already exists in $SSH_CONFIG_PATH"
+      fi
+    fi
+  fi
+
+  ssh_block=$(cat <<EOF
+Host $GITHUB_HOST_ALIAS
+  HostName $GITHUB_HOSTNAME
+  User $GITHUB_USER
+  IdentityAgent "$ONEPASSWORD_AGENT_SOCK"
+  IdentityFile "$AUTH_PUBLIC_KEY_PATH"
+  IdentitiesOnly yes
+EOF
+)
+
+  set_managed_block "$SSH_CONFIG_PATH" "$SSH_BLOCK_START" "$SSH_BLOCK_END" "$ssh_block"
+  if [[ -n "$LAST_FILE_CHANGE" ]]; then
+    chmod 600 "$SSH_CONFIG_PATH"
+    log_change "Configuration" "SSH config" "$LAST_FILE_CHANGE" "$SSH_CONFIG_PATH" "Managed GitHub SSH alias $GITHUB_HOST_ALIAS"
+  fi
+}
+
+write_allowed_signers() {
+  local signers_block
+
+  signers_block="$EMAIL $SIGN_PUBLIC_KEY"
+  set_managed_block "$ALLOWED_SIGNERS_PATH" "$SIGNERS_BLOCK_START" "$SIGNERS_BLOCK_END" "$signers_block"
+  if [[ -n "$LAST_FILE_CHANGE" ]]; then
+    chmod 644 "$ALLOWED_SIGNERS_PATH"
+    log_change "Configuration" "Allowed signers" "$LAST_FILE_CHANGE" "$ALLOWED_SIGNERS_PATH" "Managed SSH signing allowed signers"
+  fi
+}
+
+configure_git_identity() {
+  print_step "Configuring global git identity"
+  local changed="0"
+  local gitconfig_path="$HOME/.gitconfig"
+
+  if [[ "$(git config --global --get user.name || true)" != "$NAME" ]]; then
+    changed="1"
+  fi
+  if [[ "$(git config --global --get user.email || true)" != "$EMAIL" ]]; then
+    changed="1"
+  fi
+  if [[ "$(git config --global --get init.defaultBranch || true)" != "main" ]]; then
+    changed="1"
+  fi
+
+  git config --global user.name "$NAME"
+  git config --global user.email "$EMAIL"
+  git config --global init.defaultBranch main
+
+  if [[ "$changed" == "1" ]]; then
+    log_change "Configuration" "Git identity" "Updated" "$gitconfig_path" "Configured global Git identity and default branch"
+  fi
+}
+
+configure_git_signing() {
+  print_step "Configuring global SSH commit signing"
+  local changed="0"
+  local gitconfig_path="$HOME/.gitconfig"
+
+  [[ "$(git config --global --get gpg.format || true)" == "ssh" ]] || changed="1"
+  [[ "$(git config --global --get user.signingkey || true)" == "$SIGN_PUBLIC_KEY_PATH" ]] || changed="1"
+  [[ "$(git config --global --get --bool commit.gpgsign || true)" == "true" ]] || changed="1"
+  [[ "$(git config --global --get --bool tag.gpgsign || true)" == "true" ]] || changed="1"
+  [[ "$(git config --global --get gpg.ssh.allowedSignersFile || true)" == "$ALLOWED_SIGNERS_PATH" ]] || changed="1"
+
+  git config --global gpg.format ssh
+  git config --global user.signingkey "$SIGN_PUBLIC_KEY_PATH"
+  git config --global commit.gpgsign true
+  git config --global tag.gpgsign true
+  git config --global gpg.ssh.allowedSignersFile "$ALLOWED_SIGNERS_PATH"
+
+  if [[ "$changed" == "1" ]]; then
+    log_change "Configuration" "Git signing" "Updated" "$gitconfig_path" "Configured global SSH commit signing"
+  fi
+}
+
+initialize_managed_block_names() {
+  SSH_BLOCK_START="# >>> installations-configurations github ssh ${GITHUB_HOST_ALIAS} >>>"
+  SSH_BLOCK_END="# <<< installations-configurations github ssh ${GITHUB_HOST_ALIAS} <<<"
+  SIGNERS_BLOCK_START="# >>> installations-configurations allowed signers ${HOST_NAME} >>>"
+  SIGNERS_BLOCK_END="# <<< installations-configurations allowed signers ${HOST_NAME} <<<"
+}
+
+configure_repo_remote() {
+  print_step "Configuring repo remote to use $GITHUB_HOST_ALIAS"
+  local repo_git_config="$REPO_ROOT/.git/config"
+  local current_remote=""
+  local change_name=""
+
+  if git -C "$REPO_ROOT" remote get-url origin >/dev/null 2>&1; then
+    current_remote="$(git -C "$REPO_ROOT" remote get-url origin)"
+    git -C "$REPO_ROOT" remote set-url origin "$TARGET_REMOTE_URL"
+    if [[ "$current_remote" != "$TARGET_REMOTE_URL" ]]; then
+      change_name="Updated"
+    fi
+  else
+    git -C "$REPO_ROOT" remote add origin "$TARGET_REMOTE_URL"
+    change_name="Created"
+  fi
+
+  if [[ -n "$change_name" ]]; then
+    log_change "Configuration" "Git remote" "$change_name" "$repo_git_config" "Set origin to $TARGET_REMOTE_URL"
+  fi
+}
+
+print_summary() {
+  echo
+  print_step "Configured host and repo"
+  echo "Host: $HOST_NAME"
+  echo "Repo: $REPO_NAME"
+
+  echo
+  print_step "Exported public key files"
+  echo "$AUTH_PUBLIC_KEY_PATH"
+  echo "$SIGN_PUBLIC_KEY_PATH"
+
+  echo
+  print_step "GitHub SSH alias"
+  echo "$GITHUB_HOST_ALIAS"
+
+  echo
+  print_step "Repo remote"
+  echo "$TARGET_REMOTE_URL"
+
+  echo
+  print_step "Next steps"
+  echo "1. Ensure the matching 1Password keys are added to your GitHub account"
+  echo "2. Test auth with: ssh -T git@$GITHUB_HOST_ALIAS"
+  echo "3. Push with: git -C \"$REPO_ROOT\" push -u origin main"
+}
+
+require_macos
+require_command git "Install Xcode Command Line Tools first: xcode-select --install"
+require_command grep
+require_command python3 "Install Python 3 before running this script"
+initialize_change_log "scripts/macos/git-configure"
+
+print_step "Checking 1Password SSH agent"
+[[ -S "$ONEPASSWORD_AGENT_SOCK" ]] || fail "1Password SSH agent socket not found: $ONEPASSWORD_AGENT_SOCK"
+
+detect_host_name
+detect_repo_root
+detect_repo_name
+load_host_config
+
+ensure_directory "$SSH_DIR"
+ensure_directory "$(dirname "$ALLOWED_SIGNERS_PATH")"
+
+AUTH_PUBLIC_KEY_PATH="$(write_public_key_file "$AUTH_KEY_NAME" "$AUTH_PUBLIC_KEY")"
+if [[ -n "$LAST_FILE_CHANGE" ]]; then
+  log_change "Configuration" "$AUTH_KEY_NAME" "$LAST_FILE_CHANGE" "$AUTH_PUBLIC_KEY_PATH" "Wrote repo access public key"
+fi
+SIGN_PUBLIC_KEY_PATH="$(write_public_key_file "$SIGN_KEY_NAME" "$SIGN_PUBLIC_KEY")"
+if [[ -n "$LAST_FILE_CHANGE" ]]; then
+  log_change "Configuration" "$SIGN_KEY_NAME" "$LAST_FILE_CHANGE" "$SIGN_PUBLIC_KEY_PATH" "Wrote signing public key"
+fi
+GITHUB_HOST_ALIAS="github-${HOST_NAME}-${REPO_NAME}"
+initialize_managed_block_names
+
+derive_remote_url
+configure_git_identity
+write_ssh_config
+write_allowed_signers
+configure_git_signing
+configure_repo_remote
+print_summary

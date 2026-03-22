@@ -8,41 +8,66 @@ ROOT="$(repo_root)"
 CONTAINERS_CONF_SOURCE="$ROOT/config/containers/containers.conf"
 CONTAINERS_CONF_TARGET="${XDG_CONFIG_HOME:-$HOME/.config}/containers/containers.conf"
 MACHINE_NAME="${1:-podman-machine-default}"
+MACHINE_CPUS=""
+MACHINE_MEMORY=""
+MACHINE_DISK_SIZE=""
+MACHINE_ROOTFUL=""
+MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine/${MACHINE_NAME}"
 
 require_macos
 require_homebrew
 require_clt
+require_command python3 "Install Python 3 before running this script"
+initialize_change_log "scripts/macos/podman-machine-install"
 
 echo "==> Ensuring Homebrew packages are installed"
 "$ROOT/scripts/macos/brewfile-install"
 
 echo "==> Checking podman"
 if ! command -v podman >/dev/null 2>&1; then
-  echo "podman is not installed correctly"
-  exit 1
+  fail "podman is not installed correctly"
 fi
 
 echo "==> Checking source containers.conf"
 if [[ ! -f "$CONTAINERS_CONF_SOURCE" ]]; then
-  echo "Missing source config: $CONTAINERS_CONF_SOURCE"
-  exit 1
+  fail "Missing source config: $CONTAINERS_CONF_SOURCE"
 fi
+
+echo "==> Reading machine settings from containers.conf"
+MACHINE_CPUS="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" cpus)"
+MACHINE_MEMORY="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" memory)"
+MACHINE_DISK_SIZE="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" disk_size)"
+MACHINE_ROOTFUL="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" rootful)"
 
 echo "==> Deploying containers.conf"
 mkdir -p "$(dirname "$CONTAINERS_CONF_TARGET")"
 if [[ ! -f "$CONTAINERS_CONF_TARGET" ]] || ! cmp -s "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"; then
   cp "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"
+  log_change "Configuration" "containers.conf" "Copied" "$CONTAINERS_CONF_TARGET" "Copied Podman machine settings from repository"
 fi
 
 echo "==> Ensuring Podman machine exists"
 if ! podman machine inspect "$MACHINE_NAME" >/dev/null 2>&1; then
   podman machine init --now "$MACHINE_NAME"
+  if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
+    MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine"
+  fi
+  log_change "Configuration" "Podman machine" "Created" "$MACHINE_STORAGE_PATH" "Created machine $MACHINE_NAME"
 else
+  MACHINE_STATE_BEFORE="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
   echo "==> Applying Podman machine preferences where supported"
-  podman machine set --cpus 4 "$MACHINE_NAME" >/dev/null 2>&1 || true
-  podman machine set --memory 4096 "$MACHINE_NAME" >/dev/null 2>&1 || true
-  podman machine set --disk-size 60 "$MACHINE_NAME" >/dev/null 2>&1 || true
-  podman machine set --rootful=false "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --cpus "$MACHINE_CPUS" "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --memory "$MACHINE_MEMORY" "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --disk-size "$MACHINE_DISK_SIZE" "$MACHINE_NAME" >/dev/null 2>&1 || true
+  podman machine set --rootful="$MACHINE_ROOTFUL" "$MACHINE_NAME" >/dev/null 2>&1 || true
+  MACHINE_STATE_AFTER="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
+
+  if [[ "$MACHINE_STATE_BEFORE" != "$MACHINE_STATE_AFTER" ]]; then
+    if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
+      MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine"
+    fi
+    log_change "Configuration" "Podman machine" "Updated" "$MACHINE_STORAGE_PATH" "Updated machine $MACHINE_NAME settings"
+  fi
 
   echo "==> Starting Podman machine if needed"
   if ! podman info >/dev/null 2>&1; then

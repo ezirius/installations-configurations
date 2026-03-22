@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
 require_macos
+require_command curl "Install curl or ensure it is available before running this script"
+require_command sudo
+initialize_change_log "scripts/macos/brew-install"
+
+BREW_ROOT=""
 
 echo "==> Checking Xcode Command Line Tools"
 if ! xcode-select -p >/dev/null 2>&1; then
@@ -53,5 +58,8 @@ fi
 
 echo "==> Verifying Homebrew"
 brew --version
+
+BREW_ROOT="$(homebrew_root_path)"
+log_change "Installation" "Homebrew" "Installed" "$BREW_ROOT" "Installed Homebrew"
 
 echo "==> Homebrew is ready"
