@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+require_macos
+require_command podman "Install Podman first with scripts/macos/brewfile-install"
+
 echo "==> podman version"
 podman version
 echo
