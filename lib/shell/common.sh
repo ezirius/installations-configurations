@@ -12,6 +12,26 @@ repo_root() {
   cd "$script_dir/../.." && pwd
 }
 
+canonicalize_path() {
+  local input_path="$1"
+
+  if [[ -d "$input_path" ]]; then
+    (
+      cd "$input_path"
+      pwd
+    )
+  else
+    fail "Directory not found: $input_path"
+  fi
+}
+
+require_git_repo_path() {
+  local repo_path="$1"
+
+  git -C "$repo_path" rev-parse --show-toplevel >/dev/null 2>&1 \
+    || fail "Not a git repository: $repo_path"
+}
+
 load_homebrew_shellenv() {
   if [[ -x /opt/homebrew/bin/brew ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"

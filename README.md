@@ -22,7 +22,7 @@ Run these in order:
 3. Run `scripts/macos/podman-machine-install`
 4. Optionally run `scripts/macos/podman-check`
 
-See `docs/macos/podman.md` for the same workflow in a shorter form.
+See `docs/macos/podman.md` for the same workflow in a shorter form. The machine install step applies the configured Podman machine settings before starting the machine.
 
 ## macOS Git/GitHub setup
 

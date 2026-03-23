@@ -13,7 +13,7 @@ Run these in order:
 
 - `scripts/macos/brew-install` installs Homebrew if needed
 - `scripts/macos/brewfile-install` applies `config/brew/Brewfile`
-- `scripts/macos/podman-machine-install` copies `config/containers/containers.conf` into `~/.config/containers/containers.conf`, ensures the Podman machine exists, and applies the configured machine settings where supported
+- `scripts/macos/podman-machine-install` copies `config/containers/containers.conf` into `~/.config/containers/containers.conf`, ensures the Podman machine exists, applies the configured machine settings where supported, and then starts the machine
 - `scripts/macos/podman-check` prints Podman status information and runs a small test container
 
 For GitHub SSH and Git setup on macOS, run `scripts/macos/git-configure` from inside the repo you want to configure after the main system setup flow if needed.

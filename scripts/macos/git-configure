@@ -42,7 +42,16 @@ print_step() {
 }
 
 normalize_name() {
-  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-'
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+require_nonempty_name() {
+  local value="$1"
+  local label="$2"
+
+  [[ -n "$value" ]] || fail "$label resolved to an empty value"
 }
 
 ensure_directory() {
@@ -119,6 +128,7 @@ PY
 detect_host_name() {
   if [[ -n "$TARGET_HOST" ]]; then
     HOST_NAME="$(normalize_name "$TARGET_HOST")"
+    require_nonempty_name "$HOST_NAME" "Host name"
     return
   fi
 
@@ -127,11 +137,14 @@ detect_host_name() {
   else
     HOST_NAME="$(normalize_name "$(hostname -s)")"
   fi
+
+  require_nonempty_name "$HOST_NAME" "Host name"
 }
 
 detect_repo_root() {
   if [[ -n "$REPO_ROOT_OVERRIDE" ]]; then
-    REPO_ROOT="$REPO_ROOT_OVERRIDE"
+    REPO_ROOT="$(canonicalize_path "$REPO_ROOT_OVERRIDE")"
+    require_git_repo_path "$REPO_ROOT"
     return
   fi
 
@@ -145,10 +158,12 @@ detect_repo_root() {
 detect_repo_name() {
   if [[ -n "$TARGET_REPO" ]]; then
     REPO_NAME="$(normalize_name "$TARGET_REPO")"
+    require_nonempty_name "$REPO_NAME" "Repo name"
     return
   fi
 
   REPO_NAME="$(normalize_name "$(basename "$REPO_ROOT")")"
+  require_nonempty_name "$REPO_NAME" "Repo name"
 }
 
 load_host_config() {
