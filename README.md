@@ -1,6 +1,6 @@
 # Personal macOS installation and configuration helpers
 
-This repository currently automates a macOS-focused setup flow for Homebrew, Podman, and GitHub SSH/Git configuration.
+This repository currently automates a macOS-focused setup flow for Homebrew, Podman, iTerm2, and GitHub SSH/Git configuration.
 
 ## Layout
 
@@ -8,6 +8,7 @@ This repository currently automates a macOS-focused setup flow for Homebrew, Pod
   - `brew/` contains the Brewfile applied by `scripts/macos/brewfile-install`
   - `containers/` contains Podman machine defaults copied into `~/.config/containers/`
   - `git/` contains public GitHub key metadata keyed by host, such as `config/git/maldoria.conf`
+  - `iterm2/` contains managed iTerm2 preferences applied by `scripts/macos/iterm2-configure`
 - `docs/macos/` contains macOS-specific setup notes
 - `lib/shell/` contains shared shell helpers used by scripts
 - `scripts/macos/` contains macOS setup and verification scripts
@@ -19,10 +20,19 @@ Run these in order:
 
 1. Run `scripts/macos/brew-install`
 2. Run `scripts/macos/brewfile-install`
-3. Run `scripts/macos/podman-machine-install`
-4. Optionally run `scripts/macos/podman-check`
+3. Run `scripts/macos/iterm2-configure`
+4. Run `scripts/macos/podman-machine-install`
+5. Optionally run `scripts/macos/podman-check`
 
-See `docs/macos/podman.md` for the same workflow in a shorter form. The machine install step applies the configured Podman machine settings before starting the machine.
+Or run `scripts/macos/bootstrap` to execute the same setup flow in one command.
+
+The Brewfile step installs the default macOS tooling for this setup, including `iTerm2` for OpenCode use on macOS rather than relying on `Terminal.app`. The main reason is that `Terminal.app` had two practical issues in OpenCode: copy required pressing `Cmd+R`, and `Shift+Enter` did not insert a new line. Moving to `iTerm2` resolved those issues, and the iTerm2 configure step applies the managed clipboard-access preference used by this workflow.
+
+See `docs/macos/podman.md` for the same workflow in a shorter form and `docs/macos/iterm2.md` for the dedicated iTerm2 note. The machine install step applies the configured Podman machine settings before starting the machine.
+
+## Verification
+
+Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
 
 ## macOS Git/GitHub setup
 

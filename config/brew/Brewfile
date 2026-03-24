@@ -1,4 +1,5 @@
 brew "chezmoi"
 brew "podman"
 brew "podman-compose"
+cask "iterm2"
 cask "podman-desktop"

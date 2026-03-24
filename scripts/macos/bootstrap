@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+require_macos
+
+echo "==> Running macOS bootstrap"
+"$SCRIPT_DIR/brew-install"
+"$SCRIPT_DIR/brewfile-install"
+"$SCRIPT_DIR/iterm2-configure"
+"$SCRIPT_DIR/podman-machine-install"
+
+echo "==> macOS bootstrap is complete"
