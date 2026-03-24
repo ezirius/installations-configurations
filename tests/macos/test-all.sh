@@ -8,12 +8,14 @@ cd "$ROOT"
 bash -n \
   scripts/macos/brew-install \
   scripts/macos/brewfile-install \
+  scripts/macos/brew-upgrade \
   scripts/macos/git-configure \
   scripts/macos/podman-check \
   scripts/macos/podman-machine-install \
   scripts/macos/iterm2-configure \
   scripts/macos/bootstrap \
   tests/macos/test-brewfile.sh \
+  tests/macos/test-brew-upgrade.sh \
   tests/macos/test-git-config.sh \
   tests/macos/test-iterm2-config.sh \
   tests/macos/test-bootstrap.sh \
@@ -22,6 +24,7 @@ bash -n \
   tests/macos/test-all.sh
 
 "$ROOT/tests/macos/test-brewfile.sh"
+"$ROOT/tests/macos/test-brew-upgrade.sh"
 "$ROOT/tests/macos/test-git-config.sh"
 "$ROOT/tests/macos/test-iterm2-config.sh"
 "$ROOT/tests/macos/test-bootstrap.sh"

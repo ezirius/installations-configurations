@@ -31,9 +31,10 @@ Run either:
 
 1. `scripts/macos/brew-install`
 2. `scripts/macos/brewfile-install`
-3. `scripts/macos/iterm2-configure`
+3. `scripts/macos/brew-upgrade`
+4. `scripts/macos/iterm2-configure`
 
-or run `scripts/macos/bootstrap` to perform the full managed macOS setup flow.
+or run `scripts/macos/bootstrap` to perform the full managed macOS setup-and-upgrade flow.
 
 ## Verification
 

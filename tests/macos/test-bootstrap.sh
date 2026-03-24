@@ -13,6 +13,7 @@ lines = Path(sys.argv[1]).read_text().splitlines()
 expected = [
     '"$SCRIPT_DIR/brew-install"',
     '"$SCRIPT_DIR/brewfile-install"',
+    '"$SCRIPT_DIR/brew-upgrade"',
     '"$SCRIPT_DIR/iterm2-configure"',
     '"$SCRIPT_DIR/podman-machine-install"',
 ]

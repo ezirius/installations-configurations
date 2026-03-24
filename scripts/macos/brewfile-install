@@ -15,6 +15,7 @@ CHANGES_FILE=""
 require_macos
 require_homebrew
 require_clt
+require_command cmp
 require_command python3 "Install Python 3 before running this script"
 initialize_change_log "scripts/macos/brewfile-install"
 

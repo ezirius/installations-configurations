@@ -413,6 +413,7 @@ print_summary() {
 
 require_macos
 require_command git "Install Xcode Command Line Tools first: xcode-select --install"
+require_command cmp
 require_command grep
 require_command python3 "Install Python 3 before running this script"
 initialize_change_log "scripts/macos/git-configure"

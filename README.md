@@ -20,11 +20,12 @@ Run these in order:
 
 1. Run `scripts/macos/brew-install`
 2. Run `scripts/macos/brewfile-install`
-3. Run `scripts/macos/iterm2-configure`
-4. Run `scripts/macos/podman-machine-install`
-5. Optionally run `scripts/macos/podman-check`
+3. Run `scripts/macos/brew-upgrade`
+4. Run `scripts/macos/iterm2-configure`
+5. Run `scripts/macos/podman-machine-install`
+6. Optionally run `scripts/macos/podman-check`
 
-Or run `scripts/macos/bootstrap` to execute the same setup flow in one command.
+Or run `scripts/macos/bootstrap` to execute the same setup-and-upgrade flow in one command.
 
 The Brewfile step installs the default macOS tooling for this setup, including `iTerm2` for OpenCode use on macOS rather than relying on `Terminal.app`. The main reason is that `Terminal.app` had two practical issues in OpenCode: copy required pressing `Cmd+R`, and `Shift+Enter` did not insert a new line. Moving to `iTerm2` resolved those issues, and the iTerm2 configure step applies the managed clipboard-access preference used by this workflow.
 
@@ -58,6 +59,8 @@ When a script makes filesystem changes, it appends rows to a host log in `~/Docu
 - If an open host log already exists, scripts keep appending to it until you close it by renaming the trailing dashes to an end date; otherwise they create a new open file for the current date
 - Logged columns are `Date`, `Time`, `Username`, `Type`, `Script`, `Item`, `Change`, `Path`, and `Details`
 - Only real filesystem changes are logged
+- This includes Homebrew installation, Homebrew metadata updates, Brewfile-managed installs/upgrades, managed config-file writes, and Git/SSH config updates
+- Orchestrator and check scripts such as `scripts/macos/bootstrap` and `scripts/macos/podman-check` do not write their own CSV rows unless they directly make filesystem changes
 
 Example row:
 

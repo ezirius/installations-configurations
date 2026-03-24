@@ -27,12 +27,13 @@ apply_machine_preferences() {
 require_macos
 require_homebrew
 require_clt
+require_command cmp
 require_command python3 "Install Python 3 before running this script"
 initialize_change_log "scripts/macos/podman-machine-install"
 
 echo "==> Checking podman"
 if ! command -v podman >/dev/null 2>&1; then
-  fail "podman is not installed; run scripts/macos/brewfile-install first"
+  fail "podman is not installed; run scripts/macos/bootstrap or scripts/macos/brew-upgrade first"
 fi
 
 echo "==> Checking source containers.conf"

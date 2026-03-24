@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
 require_macos
-require_command podman "Install Podman first with scripts/macos/brewfile-install"
+require_command podman "Install or update Podman first with scripts/macos/bootstrap or scripts/macos/brew-upgrade"
 
 echo "==> podman version"
 podman version

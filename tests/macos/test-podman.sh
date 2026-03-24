@@ -10,7 +10,7 @@ grep -q '^memory=4096$' "$ROOT/config/containers/containers.conf"
 grep -q '^disk_size=60$' "$ROOT/config/containers/containers.conf"
 grep -q '^rootful=false$' "$ROOT/config/containers/containers.conf"
 grep -q '^apply_machine_preferences() {$' "$SCRIPT_FILE"
-grep -q '^  fail "podman is not installed; run scripts/macos/brewfile-install first"$' "$SCRIPT_FILE"
+grep -q '^  fail "podman is not installed; run scripts/macos/bootstrap or scripts/macos/brew-upgrade first"$' "$SCRIPT_FILE"
 grep -q '^  podman machine init "\$MACHINE_NAME"$' "$SCRIPT_FILE"
 grep -q '^  podman machine start "\$MACHINE_NAME"$' "$SCRIPT_FILE"
 if ! command -v podman >/dev/null 2>&1; then

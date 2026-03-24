@@ -9,6 +9,7 @@ require_macos
 echo "==> Running macOS bootstrap"
 "$SCRIPT_DIR/brew-install"
 "$SCRIPT_DIR/brewfile-install"
+"$SCRIPT_DIR/brew-upgrade"
 "$SCRIPT_DIR/iterm2-configure"
 "$SCRIPT_DIR/podman-machine-install"
 
