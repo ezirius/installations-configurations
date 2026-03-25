@@ -68,6 +68,11 @@ fail() {
   exit 1
 }
 
+usage_error() {
+  echo "Usage: $1" >&2
+  exit 1
+}
+
 current_date() {
   date '+%Y%m%d'
 }

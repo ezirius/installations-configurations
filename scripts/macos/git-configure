@@ -4,6 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
 NAME="${GIT_USER_NAME:-Ezirius}"
 EMAIL="${GIT_USER_EMAIL:-66864416+ezirius@users.noreply.github.com}"
 SSH_CONFIG_PATH="${GITHUB_SSH_CONFIG_PATH:-$HOME/.ssh/config}"

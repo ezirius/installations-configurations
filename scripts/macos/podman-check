@@ -4,6 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
 require_macos
 require_command podman "Install or update Podman first with scripts/macos/bootstrap or scripts/macos/brew-upgrade"
 

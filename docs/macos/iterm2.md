@@ -39,3 +39,5 @@ or run `scripts/macos/bootstrap` to perform the full managed macOS setup-and-upg
 ## Verification
 
 Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
+
+`scripts/macos/iterm2-configure` accepts at most one optional positional argument for an alternate config path and rejects extra arguments.

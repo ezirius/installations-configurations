@@ -28,6 +28,8 @@ See `docs/macos/iterm2.md` for the iTerm2-specific rationale and managed setting
 
 Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
 
+Scripts without positional arguments reject unexpected arguments explicitly. Scripts with a single optional override accept at most one positional argument.
+
 For GitHub SSH and Git setup on macOS, run `scripts/macos/git-configure` from inside the repo you want to configure after the main system setup flow if needed.
 
 Filesystem-changing script actions are also appended to the host CSV log in `~/Documents/Ezirius/Systems/Installations and Configurations/Computers`. Orchestrator and check scripts such as `scripts/macos/bootstrap` and `scripts/macos/podman-check` do not write their own CSV rows unless they directly make filesystem changes, and an open logfile keeps being reused until you close it by renaming the trailing dashes to an end date.

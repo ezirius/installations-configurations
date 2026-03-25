@@ -16,6 +16,7 @@ bash -n \
   scripts/macos/bootstrap \
   tests/macos/test-brewfile.sh \
   tests/macos/test-brew-upgrade.sh \
+  tests/macos/test-args.sh \
   tests/macos/test-git-config.sh \
   tests/macos/test-iterm2-config.sh \
   tests/macos/test-bootstrap.sh \
@@ -25,6 +26,7 @@ bash -n \
 
 "$ROOT/tests/macos/test-brewfile.sh"
 "$ROOT/tests/macos/test-brew-upgrade.sh"
+"$ROOT/tests/macos/test-args.sh"
 "$ROOT/tests/macos/test-git-config.sh"
 "$ROOT/tests/macos/test-iterm2-config.sh"
 "$ROOT/tests/macos/test-bootstrap.sh"

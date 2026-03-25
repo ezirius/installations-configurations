@@ -35,6 +35,8 @@ See `docs/macos/podman.md` for the same workflow in a shorter form and `docs/mac
 
 Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
 
+Scripts that do not take positional arguments now reject them explicitly, and scripts with a single optional override accept at most one positional argument.
+
 ## macOS Git/GitHub setup
 
 This is a separate post-setup step, not part of the Podman/bootstrap order above.
