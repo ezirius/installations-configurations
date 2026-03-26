@@ -18,19 +18,29 @@ bash -n \
   tests/macos/test-brew-upgrade.sh \
   tests/macos/test-args.sh \
   tests/macos/test-git-config.sh \
+  tests/macos/test-git-config-runtime.sh \
+  tests/macos/test-repo-remotes.sh \
   tests/macos/test-iterm2-config.sh \
+  tests/macos/test-iterm2-runtime.sh \
   tests/macos/test-bootstrap.sh \
+  tests/macos/test-bootstrap-runtime.sh \
   tests/macos/test-logging.sh \
   tests/macos/test-podman.sh \
+  tests/macos/test-podman-machine-runtime.sh \
   tests/macos/test-all.sh
 
 "$ROOT/tests/macos/test-brewfile.sh"
 "$ROOT/tests/macos/test-brew-upgrade.sh"
 "$ROOT/tests/macos/test-args.sh"
 "$ROOT/tests/macos/test-git-config.sh"
+"$ROOT/tests/macos/test-git-config-runtime.sh"
+"$ROOT/tests/macos/test-repo-remotes.sh"
 "$ROOT/tests/macos/test-iterm2-config.sh"
+"$ROOT/tests/macos/test-iterm2-runtime.sh"
 "$ROOT/tests/macos/test-bootstrap.sh"
+"$ROOT/tests/macos/test-bootstrap-runtime.sh"
 "$ROOT/tests/macos/test-logging.sh"
 "$ROOT/tests/macos/test-podman.sh"
+"$ROOT/tests/macos/test-podman-machine-runtime.sh"
 
 echo "All macOS checks passed"

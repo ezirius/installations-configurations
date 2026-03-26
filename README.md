@@ -14,7 +14,7 @@ This repository currently automates a macOS-focused setup flow for Homebrew, Pod
 - `scripts/macos/` contains macOS setup and verification scripts
 - `tests/macos/` contains lightweight shell checks for the macOS workflow
 
-## macOS Podman workflow
+## Quickstart
 
 Run these in order:
 
@@ -31,15 +31,7 @@ The Brewfile step installs the default macOS tooling for this setup, including `
 
 See `docs/macos/podman.md` for the same workflow in a shorter form and `docs/macos/iterm2.md` for the dedicated iTerm2 note. The machine install step applies the configured Podman machine settings before starting the machine.
 
-## Verification
-
-Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
-
-Scripts that do not take positional arguments now reject them explicitly, and scripts with a single optional override accept at most one positional argument.
-
-## macOS Git/GitHub setup
-
-This is a separate post-setup step, not part of the Podman/bootstrap order above.
+## GitHub setup on Maldoria
 
 Run `scripts/macos/git-configure` from inside the repo you want to configure.
 
@@ -51,6 +43,12 @@ Run `scripts/macos/git-configure` from inside the repo you want to configure.
 - It enables SSH commit signing with the host signing key and updates `~/.ssh/allowed_signers`
 
 The matching private keys must already exist in 1Password and be available through the 1Password SSH agent.
+
+## Verification
+
+Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
+
+Scripts that do not take positional arguments now reject them explicitly, and scripts with a single optional override accept at most one positional argument.
 
 ## Change log
 

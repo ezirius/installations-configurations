@@ -14,6 +14,8 @@ grep -q '^repo|installations-configurations|maldoria-github-ezirius-installation
 grep -q '^repo|nix-configurations|maldoria-github-ezirius-nix-configurations|ssh-ed25519 ' "$CONFIG_FILE"
 grep -q '^repo|opencode-container|maldoria-github-ezirius-opencode-container|ssh-ed25519 ' "$CONFIG_FILE"
 grep -q '^repo|honcho-container|maldoria-github-ezirius-honcho-container|ssh-ed25519 ' "$CONFIG_FILE"
+grep -q '^repo|hermes-agent-container|maldoria-github-ezirius-hermes-agent-container|ssh-ed25519 ' "$CONFIG_FILE"
+grep -q '^repo|openclaw-container|maldoria-github-ezirius-openclaw-container|ssh-ed25519 ' "$CONFIG_FILE"
 grep -q '^canonicalize_path() {$' "$COMMON_FILE"
 grep -q '^require_git_repo_path() {$' "$COMMON_FILE"
 grep -q '^require_nonempty_name() {$' "$SCRIPT_FILE"
