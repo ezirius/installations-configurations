@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+README="$ROOT/README.md"
+
+test -f "$README"
+test -f "$ROOT/docs/macos/caddy.md"
+test -f "$ROOT/docs/macos/devtools.md"
+test -f "$ROOT/docs/macos/git.md"
+test -f "$ROOT/docs/macos/ghostty.md"
+test -f "$ROOT/docs/macos/nushell.md"
+test -f "$ROOT/docs/macos/podman.md"
+test -f "$ROOT/docs/macos/system.md"
+
+grep -q '`podman/`' "$README"
+grep -q '`config/ssh/maldoria.conf`' "$README"
+grep -q '`scripts/macos/devtools-configure`' "$README"
+grep -q 'Application Support/nushell' "$README"
+grep -q '`~/.config/lazygit/`' "$README"
+grep -q '`~/.config/zellij/`' "$README"
+grep -q '`~/.config/git/installations-configurations.conf`' "$README"
+grep -q '`~/.config/containers/containers.conf`' "$README"
+grep -q '`docs/macos/git.md`' "$README"
+grep -q '`scripts/macos/system-configure`' "$ROOT/docs/macos/system.md"
+grep -q '`config/podman/containers.conf`' "$ROOT/docs/macos/podman.md"
+grep -q '`scripts/macos/devtools-configure`' "$ROOT/docs/macos/devtools.md"
+grep -q '`~/.vimrc`' "$ROOT/docs/macos/devtools.md"
+grep -q '`~/.config/git/installations-configurations.conf`' "$ROOT/docs/macos/git.md"
+grep -q '`include.path`' "$ROOT/docs/macos/git.md"
+grep -q '`fd`' "$ROOT/docs/macos/devtools.md"
+grep -q '`micro`' "$ROOT/docs/macos/devtools.md"
+grep -q '`vim`' "$ROOT/docs/macos/devtools.md"
+
+echo "Documentation checks passed"

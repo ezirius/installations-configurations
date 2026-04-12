@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_FILE="$ROOT/scripts/macos/caddy-service"
+test -f "$SCRIPT_FILE"
+grep -q '^service_started() {$' "$SCRIPT_FILE"
+grep -q '^  brew services list | grep -Eq ' "$SCRIPT_FILE"
+grep -q '^  start)$' "$SCRIPT_FILE"
+grep -q 'brew services start caddy$' "$SCRIPT_FILE"
+grep -q 'caddy reload --config "\$TARGET_CONFIG" --adapter caddyfile$' "$SCRIPT_FILE"
+grep -q '^  reload)$' "$SCRIPT_FILE"
+grep -q '^      fail "Caddy service is not running; run scripts/macos/caddy-service start first"$' "$SCRIPT_FILE"
+grep -q 'caddy reload --config "\$TARGET_CONFIG" --adapter caddyfile$' "$SCRIPT_FILE"
+grep -q '^  status)$' "$SCRIPT_FILE"
+grep -q 'brew services info caddy$' "$SCRIPT_FILE"
+echo "Caddy service checks passed"

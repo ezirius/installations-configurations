@@ -8,14 +8,14 @@ if [[ $# -gt 1 ]]; then
   usage_error "$(basename "$0") takes at most 1 argument: [brewfile-path]"
 fi
 
-ROOT="$(repo_root)"
-BREWFILE="${1:-$ROOT/config/brew/Brewfile}"
+BREWFILE_OVERRIDE="${1:-}"
 BREW_PREFIX=""
 ENTRIES_FILE=""
 BEFORE_FILE=""
 AFTER_FILE=""
 CHANGES_FILE=""
 BREW_UPDATE_OUTPUT_FILE=""
+PYTHON3_COMMAND=""
 
 cleanup() {
   rm -f "$ENTRIES_FILE" "$BEFORE_FILE" "$AFTER_FILE" "$CHANGES_FILE" "$BREW_UPDATE_OUTPUT_FILE"
@@ -62,26 +62,10 @@ entry_is_outdated() {
   [[ -n "$outdated_output" ]]
 }
 
-require_macos
-require_homebrew
-require_clt
-require_command cmp
-require_command python3 "Install Python 3 before running this script"
-initialize_change_log "scripts/macos/brew-upgrade"
+write_brewfile_entries() {
+  local brewfile_path="$1"
 
-echo "==> Checking Brewfile"
-if [[ ! -f "$BREWFILE" ]]; then
-  fail "Brewfile not found: $BREWFILE"
-fi
-
-ENTRIES_FILE="$(mktemp)"
-BEFORE_FILE="$(mktemp)"
-AFTER_FILE="$(mktemp)"
-CHANGES_FILE="$(mktemp)"
-BREW_UPDATE_OUTPUT_FILE="$(mktemp)"
-BREW_PREFIX="$(brew --prefix)"
-
-python3 - "$BREWFILE" <<'PY' > "$ENTRIES_FILE"
+  "$PYTHON3_COMMAND" - "$brewfile_path" <<'PY' > "$ENTRIES_FILE"
 import pathlib
 import re
 import sys
@@ -94,20 +78,21 @@ for line in brewfile:
     if match:
         print(f"{match.group(1)}|{match.group(2)}")
 PY
+}
 
-snapshot_brewfile_state "$BEFORE_FILE"
+upgrade_brewfile_entries() {
+  local brewfile_path="$1"
 
-echo "==> Updating Homebrew metadata"
-brew update 2>&1 | tee "$BREW_UPDATE_OUTPUT_FILE"
+  echo "==> Checking Brewfile: $brewfile_path"
+  [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
 
-if ! grep -q '^Already up-to-date\.$' "$BREW_UPDATE_OUTPUT_FILE"; then
-  log_change "Installation" "Homebrew metadata" "Updated" "$BREW_PREFIX" "Updated Homebrew metadata"
-fi
+  write_brewfile_entries "$brewfile_path"
+  snapshot_brewfile_state "$BEFORE_FILE"
 
-echo "==> Ensuring Brewfile entries are installed"
-brew bundle install --file="$BREWFILE"
+  echo "==> Ensuring Brewfile entries are installed: $brewfile_path"
+  brew bundle install --file="$brewfile_path"
 
-python3 - "$ENTRIES_FILE" <<'PY' | while IFS= read -r formula; do
+  "$PYTHON3_COMMAND" - "$ENTRIES_FILE" <<'PY' | while IFS= read -r formula; do
 import pathlib
 import sys
 
@@ -118,13 +103,13 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
         entries.append(entry_name)
 print('\n'.join(entries))
 PY
-  [[ -n "$formula" ]] || continue
-  if entry_is_outdated "brew" "$formula"; then
-    brew upgrade "$formula"
-  fi
-done
+    [[ -n "$formula" ]] || continue
+    if entry_is_outdated "brew" "$formula"; then
+      brew upgrade "$formula"
+    fi
+  done
 
-python3 - "$ENTRIES_FILE" <<'PY' | while IFS= read -r cask; do
+  "$PYTHON3_COMMAND" - "$ENTRIES_FILE" <<'PY' | while IFS= read -r cask; do
 import pathlib
 import sys
 
@@ -135,15 +120,15 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
         entries.append(entry_name)
 print('\n'.join(entries))
 PY
-  [[ -n "$cask" ]] || continue
-  if entry_is_outdated "cask" "$cask"; then
-    brew upgrade --cask "$cask"
-  fi
-done
+    [[ -n "$cask" ]] || continue
+    if entry_is_outdated "cask" "$cask"; then
+      brew upgrade --cask "$cask"
+    fi
+  done
 
-snapshot_brewfile_state "$AFTER_FILE"
+  snapshot_brewfile_state "$AFTER_FILE"
 
-python3 - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
+  "$PYTHON3_COMMAND" - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
 from pathlib import Path
 import sys
 
@@ -165,9 +150,42 @@ for (entry_type, name), after_data in after.items():
         print(f'{name}|Upgraded')
 PY
 
-while IFS='|' read -r entry_name change_name; do
-  [[ -n "$entry_name" ]] || continue
-  log_change "Installation" "$entry_name" "$change_name" "$BREW_PREFIX" "Managed by Brewfile upgrade"
-done < "$CHANGES_FILE"
+  while IFS='|' read -r entry_name change_name; do
+    [[ -n "$entry_name" ]] || continue
+    log_change "Installation" "$entry_name" "$change_name" "$BREW_PREFIX" "Managed by Brewfile upgrade"
+  done < "$CHANGES_FILE"
+}
+
+require_macos
+require_homebrew
+require_clt
+require_command cmp
+initialize_change_log "scripts/macos/brew-upgrade"
+PYTHON3_COMMAND="$(preferred_python3_command)"
+
+ENTRIES_FILE="$(mktemp)"
+BEFORE_FILE="$(mktemp)"
+AFTER_FILE="$(mktemp)"
+CHANGES_FILE="$(mktemp)"
+BREW_UPDATE_OUTPUT_FILE="$(mktemp)"
+BREW_PREFIX="$(brew --prefix)"
+
+echo "==> Updating Homebrew metadata"
+brew update 2>&1 | tee "$BREW_UPDATE_OUTPUT_FILE"
+
+if ! grep -q '^Already up-to-date\.$' "$BREW_UPDATE_OUTPUT_FILE"; then
+  log_change "Installation" "Homebrew metadata" "Updated" "$BREW_PREFIX" "Updated Homebrew metadata"
+fi
+
+if [[ -n "$BREWFILE_OVERRIDE" ]]; then
+  upgrade_brewfile_entries "$BREWFILE_OVERRIDE"
+else
+  upgrade_brewfile_entries "$(shared_platform_config_path "config/brew" "Brewfile")"
+
+  BREWFILE_OVERRIDE="$(host_platform_config_path "config/brew" "Brewfile")"
+  if [[ -f "$BREWFILE_OVERRIDE" ]]; then
+    upgrade_brewfile_entries "$BREWFILE_OVERRIDE"
+  fi
+fi
 
 echo "==> Homebrew and Brewfile entries are up to date"

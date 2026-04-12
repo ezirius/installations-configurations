@@ -1,0 +1,59 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+add_newline = true
+palette = 'tokyo-night'
+format = '$directory$git_branch$git_status$cmd_duration$line_break$character'
+
+[palettes.tokyo-night]
+bg = '#1a1b26'
+fg = '#c0caf5'
+blue = '#7aa2f7'
+cyan = '#7dcfff'
+green = '#9ece6a'
+yellow = '#e0af68'
+red = '#f7768e'
+muted = '#565f89'
+surface = '#24283b'
+
+[character]
+success_symbol = '[>](bold blue) '
+error_symbol = '[>](bold red) '
+vimcmd_symbol = '[<](bold cyan) '
+
+[directory]
+style = 'bold blue'
+read_only = ' ro'
+read_only_style = 'red'
+truncation_length = 3
+truncate_to_repo = true
+format = '[$path]($style)[$read_only]($read_only_style) '
+
+[git_branch]
+symbol = 'git '
+style = 'bold cyan'
+format = '[$symbol$branch]($style) '
+
+[git_status]
+style = 'muted'
+format = '([$all_status$ahead_behind]($style) )'
+
+[cmd_duration]
+min_time = 500
+style = 'yellow'
+format = '[took $duration]($style) '
+
+[python]
+symbol = 'py '
+style = 'bold blue'
+
+[direnv]
+disabled = false
+symbol = 'env '
+style = 'cyan'
+format = '[$symbol$loaded/$allowed]($style) '
+
+[package]
+disabled = true
+
+[line_break]
+disabled = false

@@ -8,20 +8,13 @@ if [[ $# -gt 1 ]]; then
   usage_error "$(basename "$0") takes at most 1 argument: [brewfile-path]"
 fi
 
-ROOT="$(repo_root)"
-BREWFILE="${1:-$ROOT/config/brew/Brewfile}"
+BREWFILE_OVERRIDE="${1:-}"
 BREW_PREFIX=""
 ENTRIES_FILE=""
 BEFORE_FILE=""
 AFTER_FILE=""
 CHANGES_FILE=""
-
-require_macos
-require_homebrew
-require_clt
-require_command cmp
-require_command python3 "Install Python 3 before running this script"
-initialize_change_log "scripts/macos/brewfile-install"
+PYTHON3_COMMAND=""
 
 cleanup() {
   rm -f "$ENTRIES_FILE" "$BEFORE_FILE" "$AFTER_FILE" "$CHANGES_FILE"
@@ -54,18 +47,10 @@ snapshot_brewfile_state() {
   done < "$ENTRIES_FILE"
 }
 
-echo "==> Checking Brewfile"
-if [[ ! -f "$BREWFILE" ]]; then
-  fail "Brewfile not found: $BREWFILE"
-fi
+write_brewfile_entries() {
+  local brewfile_path="$1"
 
-BREW_PREFIX="$(brew --prefix)"
-ENTRIES_FILE="$(mktemp)"
-BEFORE_FILE="$(mktemp)"
-AFTER_FILE="$(mktemp)"
-CHANGES_FILE="$(mktemp)"
-
-python3 - "$BREWFILE" <<'PY' > "$ENTRIES_FILE"
+  "$PYTHON3_COMMAND" - "$brewfile_path" <<'PY' > "$ENTRIES_FILE"
 import pathlib
 import re
 import sys
@@ -78,18 +63,28 @@ for line in brewfile:
     if match:
         print(f"{match.group(1)}|{match.group(2)}")
 PY
+}
 
-snapshot_brewfile_state "$BEFORE_FILE"
+process_brewfile() {
+  local brewfile_path="$1"
 
-echo "==> Checking Brewfile state"
-if brew bundle check --file="$BREWFILE"; then
-  echo "Brewfile already satisfied"
-else
-  echo "==> Applying Brewfile"
-  brew bundle install --file="$BREWFILE"
+  echo "==> Checking Brewfile: $brewfile_path"
+  [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
+
+  write_brewfile_entries "$brewfile_path"
+  snapshot_brewfile_state "$BEFORE_FILE"
+
+  echo "==> Checking Brewfile state"
+  if brew bundle check --file="$brewfile_path"; then
+    echo "Brewfile already satisfied: $brewfile_path"
+    return 0
+  fi
+
+  echo "==> Applying Brewfile: $brewfile_path"
+  brew bundle install --file="$brewfile_path"
 
   snapshot_brewfile_state "$AFTER_FILE"
-  python3 - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
+  "$PYTHON3_COMMAND" - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
 from pathlib import Path
 import sys
 
@@ -115,6 +110,30 @@ PY
     [[ -n "$entry_name" ]] || continue
     log_change "Installation" "$entry_name" "$change_name" "$BREW_PREFIX" "Managed by Brewfile"
   done < "$CHANGES_FILE"
+}
+
+require_macos
+require_homebrew
+require_clt
+require_command cmp
+initialize_change_log "scripts/macos/brewfile-install"
+PYTHON3_COMMAND="$(preferred_python3_command)"
+
+BREW_PREFIX="$(brew --prefix)"
+ENTRIES_FILE="$(mktemp)"
+BEFORE_FILE="$(mktemp)"
+AFTER_FILE="$(mktemp)"
+CHANGES_FILE="$(mktemp)"
+
+if [[ -n "$BREWFILE_OVERRIDE" ]]; then
+  process_brewfile "$BREWFILE_OVERRIDE"
+else
+  process_brewfile "$(shared_platform_config_path "config/brew" "Brewfile")"
+
+  BREWFILE_OVERRIDE="$(host_platform_config_path "config/brew" "Brewfile")"
+  if [[ -f "$BREWFILE_OVERRIDE" ]]; then
+    process_brewfile "$BREWFILE_OVERRIDE"
+  fi
 fi
 
 echo "==> Brewfile applied successfully"

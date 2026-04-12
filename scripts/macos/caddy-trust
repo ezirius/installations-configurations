@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
+BREW_PREFIX=""
+TARGET_CONFIG=""
+
+find_trusted_keychain() {
+  local keychain
+
+  for keychain in \
+    "/Library/Keychains/System.keychain" \
+    "$HOME/Library/Keychains/login.keychain-db"
+  do
+    if security find-certificate -c "Caddy Local Authority" "$keychain" >/dev/null 2>&1; then
+      printf '%s\n' "$keychain"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+require_macos
+require_homebrew
+require_clt
+require_command caddy "Run scripts/macos/brewfile-install before trusting the Caddy local CA"
+require_command security
+initialize_change_log "scripts/macos/caddy-trust"
+
+BREW_PREFIX="$(brew --prefix)"
+TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"
+
+[[ -f "$TARGET_CONFIG" ]] || fail "Managed Caddyfile not found: $TARGET_CONFIG; run scripts/macos/caddy-configure first"
+
+if TRUSTED_KEYCHAIN="$(find_trusted_keychain)"; then
+  echo "==> Caddy local CA is already trusted"
+  exit 0
+fi
+
+echo "==> Trusting the Caddy local CA"
+caddy trust --config "$TARGET_CONFIG" --adapter caddyfile >/dev/null
+
+TRUSTED_KEYCHAIN="$(find_trusted_keychain || true)"
+[[ -n "$TRUSTED_KEYCHAIN" ]] || fail "Caddy trust completed without a detectable trusted local CA certificate"
+
+log_change "Configuration" "Caddy local CA" "Trusted" "$TRUSTED_KEYCHAIN" "Trusted the managed Caddy local CA for local HTTPS"
+
+echo "==> Caddy local CA is trusted"

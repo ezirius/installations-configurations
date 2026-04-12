@@ -8,8 +8,8 @@ if [[ $# -ne 0 ]]; then
   usage_error "$(basename "$0") takes no arguments"
 fi
 
-NAME="${GIT_USER_NAME:-Ezirius}"
-EMAIL="${GIT_USER_EMAIL:-66864416+ezirius@users.noreply.github.com}"
+NAME=""
+EMAIL=""
 SSH_CONFIG_PATH="${GITHUB_SSH_CONFIG_PATH:-$HOME/.ssh/config}"
 SSH_DIR="$(dirname "$SSH_CONFIG_PATH")"
 ALLOWED_SIGNERS_PATH="${GIT_ALLOWED_SIGNERS_PATH:-$HOME/.ssh/allowed_signers}"
@@ -21,6 +21,7 @@ TARGET_HOST="${GIT_CONFIG_HOST:-}"
 TARGET_REPO="${GIT_CONFIG_REPO:-}"
 REPO_ROOT_OVERRIDE="${GIT_CONFIG_REPO_ROOT:-}"
 CONFIG_REPO_ROOT="$(repo_root)"
+MANAGED_GIT_CONFIG_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/git/installations-configurations.conf"
 
 HOST_NAME=""
 HOST_CONFIG_PATH=""
@@ -40,15 +41,10 @@ SSH_BLOCK_END=""
 SIGNERS_BLOCK_START=""
 SIGNERS_BLOCK_END=""
 LAST_FILE_CHANGE=""
+PYTHON3_COMMAND=""
 
 print_step() {
   echo "==> $1"
-}
-
-normalize_name() {
-  printf '%s' "$1" \
-    | tr '[:upper:]' '[:lower:]' \
-    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
 
 require_nonempty_name() {
@@ -75,7 +71,7 @@ set_managed_block() {
 
   if [[ -f "$target_path" ]]; then
     existing_file="1"
-    python3 - "$target_path" "$temp_file" "$block_start" "$block_end" <<'PY'
+    "$PYTHON3_COMMAND" - "$target_path" "$temp_file" "$block_start" "$block_end" <<'PY'
 import pathlib
 import sys
 
@@ -176,7 +172,7 @@ load_host_config() {
   local field2
   local field3
 
-  HOST_CONFIG_PATH="$CONFIG_REPO_ROOT/config/git/${HOST_NAME}.conf"
+  HOST_CONFIG_PATH="$CONFIG_REPO_ROOT/config/ssh/${HOST_NAME}.conf"
   if [[ ! -f "$HOST_CONFIG_PATH" ]]; then
     fail "Host key config not found: $HOST_CONFIG_PATH"
   fi
@@ -248,7 +244,7 @@ derive_remote_url() {
     REMOTE_URL="git@${GITHUB_HOSTNAME}:${GITHUB_OWNER}/${REPO_NAME}.git"
   fi
 
-  TARGET_REMOTE_URL="$(python3 - "$REMOTE_URL" "$GITHUB_HOST_ALIAS" "$GITHUB_OWNER" "$REPO_NAME" <<'PY'
+  TARGET_REMOTE_URL="$($PYTHON3_COMMAND - "$REMOTE_URL" "$GITHUB_HOST_ALIAS" "$GITHUB_OWNER" "$REPO_NAME" "$GITHUB_HOSTNAME" <<'PY'
 import re
 import sys
 
@@ -256,23 +252,88 @@ remote = sys.argv[1]
 alias = sys.argv[2]
 owner = sys.argv[3]
 repo = sys.argv[4]
+hostname = sys.argv[5]
 
-scp = re.match(r'^(?:.+@)?[^:]+:(.+)$', remote)
-https = re.match(r'^https://[^/]+/(.+)$', remote)
+scp = re.match(r'^(?:.+@)?([^:]+):(.+)$', remote)
+ssh_url = re.match(r'^ssh://(?:.+@)?([^/]+)/(.+)$', remote)
+https = re.match(r'^https://([^/]+)/(.+)$', remote)
 
 if scp:
-    path = scp.group(1)
+    current_host = scp.group(1)
+    path = scp.group(2)
+elif ssh_url:
+    current_host = ssh_url.group(1)
+    path = ssh_url.group(2)
 elif https:
-    path = https.group(1)
+    current_host = https.group(1)
+    path = https.group(2)
 else:
+    current_host = hostname
     path = f"{owner}/{repo}.git"
 
 if not path.endswith('.git'):
     path += '.git'
 
+expected_path = f"{owner}/{repo}.git"
+if path != expected_path:
+    raise SystemExit(f"Current remote path '{path}' does not match expected '{expected_path}'. Set GITHUB_REPO_OWNER or GIT_CONFIG_REPO if you want a different managed target.")
+
+if current_host not in {hostname, alias}:
+    raise SystemExit(f"Current remote host '{current_host}' is not the expected managed host '{hostname}'. Refusing to rewrite origin automatically.")
+
 print(f"git@{alias}:{path}")
 PY
   )"
+}
+
+write_managed_git_config() {
+  local managed_content
+  local change_name="Created"
+  local temp_file
+
+  managed_content=$(cat <<EOF
+[user]
+	name = $NAME
+	email = $EMAIL
+	signingkey = $SIGN_PUBLIC_KEY_PATH
+[init]
+	defaultBranch = main
+[core]
+	editor = micro
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	line-numbers = true
+[merge]
+	conflictstyle = zdiff3
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	allowedSignersFile = $ALLOWED_SIGNERS_PATH
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
+EOF
+)
+
+  temp_file="$(mktemp)"
+  printf '%s\n' "$managed_content" > "$temp_file"
+  mkdir -p "$(dirname "$MANAGED_GIT_CONFIG_PATH")"
+
+  if [[ -f "$MANAGED_GIT_CONFIG_PATH" ]] && cmp -s "$MANAGED_GIT_CONFIG_PATH" "$temp_file"; then
+    rm -f "$temp_file"
+    return 0
+  fi
+
+  if [[ -f "$MANAGED_GIT_CONFIG_PATH" ]]; then
+    change_name="Updated"
+  fi
+
+  mv "$temp_file" "$MANAGED_GIT_CONFIG_PATH"
+  log_change "Configuration" "Git managed include" "$change_name" "$MANAGED_GIT_CONFIG_PATH" "Updated the managed global Git defaults include"
 }
 
 write_ssh_config() {
@@ -318,46 +379,23 @@ configure_git_identity() {
   print_step "Configuring global git identity"
   local changed="0"
   local gitconfig_path="$HOME/.gitconfig"
+  local include_value
 
-  if [[ "$(git config --global --get user.name || true)" != "$NAME" ]]; then
-    changed="1"
-  fi
-  if [[ "$(git config --global --get user.email || true)" != "$EMAIL" ]]; then
-    changed="1"
-  fi
-  if [[ "$(git config --global --get init.defaultBranch || true)" != "main" ]]; then
-    changed="1"
-  fi
+  write_managed_git_config
 
-  git config --global user.name "$NAME"
-  git config --global user.email "$EMAIL"
-  git config --global init.defaultBranch main
+  include_value="$(git config --global --get include.path || true)"
+  [[ "$include_value" == "$MANAGED_GIT_CONFIG_PATH" ]] || changed="1"
+
+  git config --global include.path "$MANAGED_GIT_CONFIG_PATH"
 
   if [[ "$changed" == "1" ]]; then
-    log_change "Configuration" "Git identity" "Updated" "$gitconfig_path" "Configured global Git identity and default branch"
+    log_change "Configuration" "Git identity" "Updated" "$gitconfig_path" "Configured the global Git include for managed identity, editor, and review defaults"
   fi
 }
 
 configure_git_signing() {
   print_step "Configuring global SSH commit signing"
-  local changed="0"
-  local gitconfig_path="$HOME/.gitconfig"
-
-  [[ "$(git config --global --get gpg.format || true)" == "ssh" ]] || changed="1"
-  [[ "$(git config --global --get user.signingkey || true)" == "$SIGN_PUBLIC_KEY_PATH" ]] || changed="1"
-  [[ "$(git config --global --get --bool commit.gpgsign || true)" == "true" ]] || changed="1"
-  [[ "$(git config --global --get --bool tag.gpgsign || true)" == "true" ]] || changed="1"
-  [[ "$(git config --global --get gpg.ssh.allowedSignersFile || true)" == "$ALLOWED_SIGNERS_PATH" ]] || changed="1"
-
-  git config --global gpg.format ssh
-  git config --global user.signingkey "$SIGN_PUBLIC_KEY_PATH"
-  git config --global commit.gpgsign true
-  git config --global tag.gpgsign true
-  git config --global gpg.ssh.allowedSignersFile "$ALLOWED_SIGNERS_PATH"
-
-  if [[ "$changed" == "1" ]]; then
-    log_change "Configuration" "Git signing" "Updated" "$gitconfig_path" "Configured global SSH commit signing"
-  fi
+  write_managed_git_config
 }
 
 initialize_managed_block_names() {
@@ -419,8 +457,15 @@ require_macos
 require_command git "Install Xcode Command Line Tools first: xcode-select --install"
 require_command cmp
 require_command grep
-require_command python3 "Install Python 3 before running this script"
 initialize_change_log "scripts/macos/git-configure"
+PYTHON3_COMMAND="$(preferred_python3_command)"
+require_git_repo_path "$CONFIG_REPO_ROOT"
+
+NAME="$(git -C "$CONFIG_REPO_ROOT" config user.name || true)"
+EMAIL="$(git -C "$CONFIG_REPO_ROOT" config user.email || true)"
+
+[[ -n "$NAME" ]] || fail "Git user.name is not set for this repository; set it before running git-configure"
+[[ -n "$EMAIL" ]] || fail "Git user.email is not set for this repository; set it before running git-configure"
 
 print_step "Checking 1Password SSH agent"
 [[ -S "$ONEPASSWORD_AGENT_SOCK" ]] || fail "1Password SSH agent socket not found: $ONEPASSWORD_AGENT_SOCK"

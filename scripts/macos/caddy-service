@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+if [[ $# -ne 1 ]]; then
+  usage_error "$(basename "$0") takes exactly 1 argument: {start|stop|restart|reload|status}"
+fi
+
+ACTION="$1"
+BREW_PREFIX=""
+TARGET_CONFIG=""
+
+service_started() {
+  brew services list | grep -Eq '^caddy[[:space:]]+started([[:space:]]|$)'
+}
+
+case "$ACTION" in
+  start|stop|restart|reload|status) ;;
+  *)
+    usage_error "$(basename "$0") takes exactly 1 argument: {start|stop|restart|reload|status}"
+    ;;
+esac
+
+require_macos
+require_homebrew
+require_clt
+require_command caddy "Run scripts/macos/brewfile-install before managing the Caddy service"
+
+BREW_PREFIX="$(brew --prefix)"
+TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"
+
+[[ -f "$TARGET_CONFIG" ]] || fail "Managed Caddyfile not found: $TARGET_CONFIG; run scripts/macos/caddy-configure first"
+
+case "$ACTION" in
+  start)
+    if service_started; then
+      echo "==> Reloading the running Caddy background service"
+      caddy reload --config "$TARGET_CONFIG" --adapter caddyfile
+    else
+      echo "==> Starting Caddy background service"
+      brew services start caddy
+    fi
+    ;;
+  stop)
+    echo "==> Stopping Caddy background service"
+    brew services stop caddy
+    ;;
+  restart)
+    echo "==> Restarting Caddy background service"
+    brew services restart caddy
+    ;;
+  reload)
+    if ! service_started; then
+      fail "Caddy service is not running; run scripts/macos/caddy-service start first"
+    fi
+
+    echo "==> Reloading Caddy without downtime"
+    caddy reload --config "$TARGET_CONFIG" --adapter caddyfile
+    ;;
+  status)
+    echo "==> Showing Caddy service status"
+    brew services info caddy
+    ;;
+esac

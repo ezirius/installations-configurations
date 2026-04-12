@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
+SYSTEM_CONFIG_SHARED="$(shared_platform_config_path "config/system" "conf")"
+SYSTEM_CONFIG_HOST="$(host_platform_config_path "config/system" "conf")"
+DOCK_AUTOHIDE=""
+DOCK_MRU_SPACES=""
+PMSET_AC_SLEEP=""
+DOCK_CHANGED="0"
+
+load_system_config() {
+  local config_path
+
+  for config_path in "$SYSTEM_CONFIG_SHARED" "$SYSTEM_CONFIG_HOST"; do
+    if [[ -f "$config_path" ]]; then
+      # shellcheck disable=SC1090
+      source "$config_path"
+    fi
+  done
+}
+
+bool_to_defaults_value() {
+  case "$1" in
+    true) printf '%s\n' '1' ;;
+    false) printf '%s\n' '0' ;;
+    *) fail "Invalid boolean value: $1" ;;
+  esac
+}
+
+set_dock_bool() {
+  local key_name="$1"
+  local desired_value="$2"
+  local item_name="$3"
+  local current_value=""
+
+  current_value="$(defaults read com.apple.dock "$key_name" 2>/dev/null || printf '0')"
+  desired_value="$(bool_to_defaults_value "$desired_value")"
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  defaults write com.apple.dock "$key_name" -bool "$desired_value"
+  DOCK_CHANGED="1"
+  log_change "Configuration" "$item_name" "Updated" "com.apple.dock" "Set $key_name=$desired_value"
+}
+
+mac_is_portable() {
+  pmset -g batt 2>/dev/null | grep -q 'InternalBattery'
+}
+
+current_pmset_sleep_setting() {
+  local power_section="$1"
+
+  pmset -g custom | awk -v section="$power_section" '
+    $0 == section":" { in_section = 1; next }
+    /^[A-Za-z].*:$/ { in_section = 0 }
+    in_section && $1 == "sleep" { print $2; exit }
+  '
+}
+
+apply_pmset_sleep() {
+  local desired_value="$1"
+  local scope_flag="-a"
+  local power_section="AC Power"
+  local current_value=""
+
+  if mac_is_portable; then
+    scope_flag="-c"
+  fi
+
+  current_value="$(current_pmset_sleep_setting "$power_section" || true)"
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  sudo pmset "$scope_flag" sleep "$desired_value"
+  log_change "Configuration" "Power management" "Updated" "pmset" "Set $scope_flag sleep $desired_value to prevent automatic system sleep while on AC power"
+}
+
+require_macos
+require_clt
+require_command defaults
+require_command grep
+require_command pmset
+require_command sudo
+initialize_change_log "scripts/macos/system-configure"
+
+echo "==> Loading managed macOS system config"
+[[ -f "$SYSTEM_CONFIG_SHARED" ]] || fail "Shared macOS system config not found: $SYSTEM_CONFIG_SHARED"
+load_system_config
+
+[[ -n "$DOCK_AUTOHIDE" ]] || fail "DOCK_AUTOHIDE is not set in the managed macOS system config"
+[[ -n "$DOCK_MRU_SPACES" ]] || fail "DOCK_MRU_SPACES is not set in the managed macOS system config"
+[[ -n "$PMSET_AC_SLEEP" ]] || fail "PMSET_AC_SLEEP is not set in the managed macOS system config"
+
+echo "==> Applying Dock settings"
+set_dock_bool autohide "$DOCK_AUTOHIDE" "Dock autohide"
+set_dock_bool mru-spaces "$DOCK_MRU_SPACES" "Dock mru-spaces"
+
+if [[ "$DOCK_CHANGED" == "1" ]]; then
+  killall Dock >/dev/null 2>&1 || true
+fi
+
+echo "==> Applying power settings"
+sudo -v
+apply_pmset_sleep "$PMSET_AC_SLEEP"
+
+echo "==> macOS system settings are ready"

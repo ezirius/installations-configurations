@@ -1,0 +1,28 @@
+theme "tokyo-night"
+default_layout "compact"
+default_mode "locked"
+copy_command "pbcopy"
+copy_clipboard "system"
+copy_on_select true
+mouse_mode true
+pane_frames true
+auto_layout true
+scroll_buffer_size 20000
+session_serialization true
+styled_underlines true
+
+themes {
+    tokyo-night {
+        fg 192 202 245
+        bg 26 27 38
+        red 247 118 142
+        green 158 206 106
+        yellow 224 175 104
+        blue 122 162 247
+        magenta 187 154 247
+        orange 255 158 100
+        cyan 125 207 255
+        black 21 22 30
+        white 201 214 255
+    }
+}

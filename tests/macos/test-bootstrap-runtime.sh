@@ -22,9 +22,37 @@ cat > "$REPO_DIR/scripts/macos/brew-upgrade" <<'EOF'
 #!/usr/bin/env bash
 printf 'brew-upgrade\n' >> "$BOOTSTRAP_RUNTIME_LOG"
 EOF
-cat > "$REPO_DIR/scripts/macos/iterm2-configure" <<'EOF'
+cat > "$REPO_DIR/scripts/macos/caddy-configure" <<'EOF'
 #!/usr/bin/env bash
-printf 'iterm2-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+printf 'caddy-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/caddy-service" <<'EOF'
+#!/usr/bin/env bash
+printf 'caddy-service %s\n' "$1" >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/caddy-trust" <<'EOF'
+#!/usr/bin/env bash
+printf 'caddy-trust\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/ghostty-configure" <<'EOF'
+#!/usr/bin/env bash
+printf 'ghostty-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/jj-configure" <<'EOF'
+#!/usr/bin/env bash
+printf 'jj-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/nushell-configure" <<'EOF'
+#!/usr/bin/env bash
+printf 'nushell-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/devtools-configure" <<'EOF'
+#!/usr/bin/env bash
+printf 'devtools-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
+EOF
+cat > "$REPO_DIR/scripts/macos/system-configure" <<'EOF'
+#!/usr/bin/env bash
+printf 'system-configure\n' >> "$BOOTSTRAP_RUNTIME_LOG"
 EOF
 cat > "$REPO_DIR/scripts/macos/podman-machine-install" <<'EOF'
 #!/usr/bin/env bash
@@ -41,7 +69,7 @@ chmod +x "$TMPDIR/uname"
 LOG_FILE="$TMPDIR/state/bootstrap.log"
 PATH="$TMPDIR:$PATH" BOOTSTRAP_RUNTIME_LOG="$LOG_FILE" "$REPO_DIR/scripts/macos/bootstrap" >/dev/null
 
-EXPECTED=$'brew-install\nbrewfile-install\nbrew-upgrade\niterm2-configure\npodman-machine-install'
+EXPECTED=$'brew-install\nbrewfile-install\nbrew-upgrade\ncaddy-configure\ncaddy-service start\ncaddy-trust\nghostty-configure\njj-configure\nnushell-configure\ndevtools-configure\nsystem-configure\npodman-machine-install'
 ACTUAL="$(cat "$LOG_FILE")"
 if [[ "$ACTUAL" != "$EXPECTED" ]]; then
   printf 'assertion failed: bootstrap runtime order\nexpected:\n%s\nactual:\n%s\n' "$EXPECTED" "$ACTUAL" >&2

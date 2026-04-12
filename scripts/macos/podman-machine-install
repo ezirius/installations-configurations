@@ -9,7 +9,7 @@ if [[ $# -gt 1 ]]; then
 fi
 
 ROOT="$(repo_root)"
-CONTAINERS_CONF_SOURCE="$ROOT/config/containers/containers.conf"
+CONTAINERS_CONF_SOURCE="$ROOT/config/podman/containers.conf"
 CONTAINERS_CONF_TARGET="${XDG_CONFIG_HOME:-$HOME/.config}/containers/containers.conf"
 MACHINE_NAME="${1:-podman-machine-default}"
 MACHINE_CPUS=""
@@ -19,21 +19,81 @@ MACHINE_ROOTFUL=""
 MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine/${MACHINE_NAME}"
 MACHINE_STATE_BEFORE=""
 MACHINE_STATE_AFTER=""
+MACHINE_SET_HELP=""
+PYTHON3_COMMAND=""
+MACHINE_WAS_RUNNING="0"
+
+machine_set_option_supported() {
+  local option_name="$1"
+  [[ "$MACHINE_SET_HELP" == *"$option_name"* ]]
+}
+
+apply_machine_setting() {
+  local option_name="$1"
+  local option_value="$2"
+
+  if ! machine_set_option_supported "$option_name"; then
+    echo "==> Skipping unsupported Podman machine setting: $option_name"
+    return 0
+  fi
+
+  podman machine set "$option_name" "$option_value" "$MACHINE_NAME" >/dev/null
+}
 
 apply_machine_preferences() {
   echo "==> Applying Podman machine preferences where supported"
-  podman machine set --cpus "$MACHINE_CPUS" "$MACHINE_NAME" >/dev/null 2>&1 || true
-  podman machine set --memory "$MACHINE_MEMORY" "$MACHINE_NAME" >/dev/null 2>&1 || true
-  podman machine set --disk-size "$MACHINE_DISK_SIZE" "$MACHINE_NAME" >/dev/null 2>&1 || true
-  podman machine set --rootful="$MACHINE_ROOTFUL" "$MACHINE_NAME" >/dev/null 2>&1 || true
+  MACHINE_SET_HELP="$(podman machine set --help 2>/dev/null || true)"
+
+  apply_machine_setting --cpus "$MACHINE_CPUS"
+  apply_machine_setting --memory "$MACHINE_MEMORY"
+  apply_machine_setting --disk-size "$MACHINE_DISK_SIZE"
+  apply_machine_setting --rootful "$MACHINE_ROOTFUL"
+}
+
+machine_is_running() {
+  local inspect_json
+
+  inspect_json="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
+  [[ -n "$inspect_json" ]] || return 1
+
+  "$PYTHON3_COMMAND" - "$inspect_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+if isinstance(data, list) and data:
+    state = data[0].get("State") or {}
+    running = state.get("Running")
+    if isinstance(running, bool):
+        sys.exit(0 if running else 1)
+
+sys.exit(1)
+PY
+}
+
+prepare_machine_for_update() {
+  if machine_is_running; then
+    echo "==> Stopping running Podman machine before applying mutable settings"
+    podman machine stop "$MACHINE_NAME" >/dev/null
+    MACHINE_WAS_RUNNING="1"
+  else
+    MACHINE_WAS_RUNNING="0"
+  fi
+}
+
+restore_machine_after_update() {
+  if [[ "$MACHINE_WAS_RUNNING" == "1" ]]; then
+    echo "==> Restarting Podman machine after applying settings"
+    podman machine start "$MACHINE_NAME" >/dev/null
+  fi
 }
 
 require_macos
 require_homebrew
 require_clt
 require_command cmp
-require_command python3 "Install Python 3 before running this script"
 initialize_change_log "scripts/macos/podman-machine-install"
+PYTHON3_COMMAND="$(preferred_python3_command)"
 
 echo "==> Checking podman"
 if ! command -v podman >/dev/null 2>&1; then
@@ -69,7 +129,9 @@ if ! podman machine inspect "$MACHINE_NAME" >/dev/null 2>&1; then
   log_change "Configuration" "Podman machine" "Created" "$MACHINE_STORAGE_PATH" "Created machine $MACHINE_NAME"
 else
   MACHINE_STATE_BEFORE="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
+  prepare_machine_for_update
   apply_machine_preferences
+  restore_machine_after_update
   MACHINE_STATE_AFTER="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
 
   if [[ "$MACHINE_STATE_BEFORE" != "$MACHINE_STATE_AFTER" ]]; then

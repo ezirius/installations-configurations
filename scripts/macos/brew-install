@@ -9,8 +9,6 @@ if [[ $# -ne 0 ]]; then
 fi
 
 require_macos
-require_command curl "Install curl or ensure it is available before running this script"
-require_command sudo
 initialize_change_log "scripts/macos/brew-install"
 
 BREW_ROOT=""
@@ -33,37 +31,4 @@ if command -v brew >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "==> Validating administrator access for Homebrew installation"
-sudo -v
-
-echo "==> Keeping sudo session alive during Homebrew installation"
-(
-  while true; do
-    sudo -n true
-    sleep 30
-  done
-) >/dev/null 2>&1 &
-SUDO_KEEPALIVE_PID="$!"
-trap 'kill "$SUDO_KEEPALIVE_PID" >/dev/null 2>&1 || true' EXIT
-
-echo "==> Installing Homebrew"
-NONINTERACTIVE=1 /bin/bash -c \
-  "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-echo "==> Loading Homebrew into PATH"
-load_homebrew_shellenv
-
-if ! command -v brew >/dev/null 2>&1; then
-  echo "Homebrew installation finished, but brew is still not on PATH"
-  echo "Apple Silicon expected path: /opt/homebrew/bin/brew"
-  echo "Intel expected path: /usr/local/bin/brew"
-  exit 1
-fi
-
-echo "==> Verifying Homebrew"
-brew --version
-
-BREW_ROOT="$(homebrew_root_path)"
-log_change "Installation" "Homebrew" "Installed" "$BREW_ROOT" "Installed Homebrew"
-
-echo "==> Homebrew is ready"
+fail "Homebrew is not installed. This repository does not execute the upstream Homebrew installer automatically because the published install path is a moving script without an official SHA-256 verification artefact for this workflow. Install Homebrew manually, then re-run this script."

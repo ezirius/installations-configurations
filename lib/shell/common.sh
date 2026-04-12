@@ -12,6 +12,83 @@ repo_root() {
   cd "$script_dir/../.." && pwd
 }
 
+platform_key() {
+  case "$(uname -s)" in
+    Darwin)
+      printf '%s\n' 'macos'
+      ;;
+    Linux)
+      printf '%s\n' 'linux'
+      ;;
+    *)
+      fail "Unsupported platform: $(uname -s)"
+      ;;
+  esac
+}
+
+normalized_host_name() {
+  local host_name
+
+  if command -v scutil >/dev/null 2>&1 && scutil --get ComputerName >/dev/null 2>&1; then
+    host_name="$(scutil --get ComputerName)"
+  else
+    host_name="$(hostname -s)"
+  fi
+
+  host_name="${host_name%%.*}"
+  normalize_name "$host_name"
+}
+
+normalize_name() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+shared_platform_config_path() {
+  local relative_dir="$1"
+  local extension="$2"
+  printf '%s/%s/shared-%s.%s\n' "$(repo_root)" "$relative_dir" "$(platform_key)" "$extension"
+}
+
+host_platform_config_path() {
+  local relative_dir="$1"
+  local extension="$2"
+  printf '%s/%s/%s-%s.%s\n' "$(repo_root)" "$relative_dir" "$(normalized_host_name)" "$(platform_key)" "$extension"
+}
+
+shared_host_config_path() {
+  local relative_dir="$1"
+  local extension="$2"
+  printf '%s/%s/shared.%s\n' "$(repo_root)" "$relative_dir" "$extension"
+}
+
+host_config_path() {
+  local relative_dir="$1"
+  local extension="$2"
+  printf '%s/%s/%s.%s\n' "$(repo_root)" "$relative_dir" "$(normalized_host_name)" "$extension"
+}
+
+preferred_python3_command() {
+  local brew_python=""
+
+  load_homebrew_shellenv
+  if command -v brew >/dev/null 2>&1; then
+    brew_python="$(brew --prefix)/bin/python3"
+    if [[ -x "$brew_python" ]]; then
+      printf '%s\n' "$brew_python"
+      return 0
+    fi
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+    return 0
+  fi
+
+  fail "python3 is required but was not found. Install Python 3 or ensure Homebrew Python is available."
+}
+
 canonicalize_path() {
   local input_path="$1"
 
@@ -213,8 +290,11 @@ require_command() {
 read_machine_config_value() {
   local config_file="$1"
   local key="$2"
+  local python3_command
 
-  python3 - "$config_file" "$key" <<'PY'
+  python3_command="$(preferred_python3_command)"
+
+  "$python3_command" - "$config_file" "$key" <<'PY'
 import configparser
 import pathlib
 import sys

@@ -1,0 +1,32 @@
+gui:
+  theme:
+    activeBorderColor:
+      - blue
+      - bold
+    inactiveBorderColor:
+      - '#565f89'
+    searchingActiveBorderColor:
+      - cyan
+      - bold
+    optionsTextColor:
+      - blue
+    selectedLineBgColor:
+      - '#33467c'
+    defaultFgColor:
+      - '#c0caf5'
+  border: rounded
+  mouseEvents: true
+  showFileTree: true
+  showNumstatInFilesView: true
+  nerdFontsVersion: "3"
+
+git:
+  autoFetch: true
+  autoRefresh: true
+  fetchAll: true
+  log:
+    order: topo-order
+    showGraph: always
+
+os:
+  editPreset: micro

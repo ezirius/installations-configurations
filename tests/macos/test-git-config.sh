@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-CONFIG_FILE="$ROOT/config/git/maldoria.conf"
+CONFIG_FILE="$ROOT/config/ssh/maldoria.conf"
 SCRIPT_FILE="$ROOT/scripts/macos/git-configure"
 COMMON_FILE="$ROOT/lib/shell/common.sh"
 
@@ -17,11 +17,18 @@ grep -q '^repo|honcho-container|maldoria-github-ezirius-honcho-container|ssh-ed2
 grep -q '^repo|hermes-agent-container|maldoria-github-ezirius-hermes-agent-container|ssh-ed25519 ' "$CONFIG_FILE"
 grep -q '^repo|openclaw-container|maldoria-github-ezirius-openclaw-container|ssh-ed25519 ' "$CONFIG_FILE"
 grep -q '^canonicalize_path() {$' "$COMMON_FILE"
+grep -q '^normalize_name() {$' "$COMMON_FILE"
 grep -q '^require_git_repo_path() {$' "$COMMON_FILE"
 grep -q '^require_nonempty_name() {$' "$SCRIPT_FILE"
-grep -q 'sed -E '\''s/\[^a-z0-9\]+/-/g; s/\^-+//; s/-+\$//'\''' "$SCRIPT_FILE"
+grep -q '^MANAGED_GIT_CONFIG_PATH=' "$SCRIPT_FILE"
 grep -q 'REPO_ROOT="\$(canonicalize_path "\$REPO_ROOT_OVERRIDE")"' "$SCRIPT_FILE"
 grep -q 'require_git_repo_path "\$REPO_ROOT"' "$SCRIPT_FILE"
+grep -q 'require_git_repo_path "\$CONFIG_REPO_ROOT"' "$SCRIPT_FILE"
+grep -q '^NAME=""$' "$SCRIPT_FILE"
+grep -q '^EMAIL=""$' "$SCRIPT_FILE"
+grep -q '^NAME="\$(git -C "\$CONFIG_REPO_ROOT" config user.name || true)"$' "$SCRIPT_FILE"
+grep -q '^EMAIL="\$(git -C "\$CONFIG_REPO_ROOT" config user.email || true)"$' "$SCRIPT_FILE"
+grep -q '^write_managed_git_config() {$' "$SCRIPT_FILE"
 grep -q 'require_nonempty_name "\$HOST_NAME" "Host name"' "$SCRIPT_FILE"
 grep -q 'require_nonempty_name "\$REPO_NAME" "Repo name"' "$SCRIPT_FILE"
 grep -q 'change_name="Created"' "$SCRIPT_FILE"

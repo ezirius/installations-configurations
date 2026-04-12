@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+CONFIG_FILE="$ROOT/config/jj/config.toml"
+SCRIPT_FILE="$ROOT/scripts/macos/jj-configure"
+test -f "$CONFIG_FILE"
+test -f "$SCRIPT_FILE"
+grep -q '^name = "__JJ_USER_NAME__"$' "$CONFIG_FILE"
+grep -q '^email = "__JJ_USER_EMAIL__"$' "$CONFIG_FILE"
+grep -q '^TARGET_CONFIG="\${1:-\${XDG_CONFIG_HOME:-\$HOME/.config}/jj/config.toml}"$' "$SCRIPT_FILE"
+grep -q '^JJ_USER_NAME=""$' "$SCRIPT_FILE"
+grep -q '^JJ_USER_EMAIL=""$' "$SCRIPT_FILE"
+grep -q '^JJ_USER_NAME="\$(git -C "\$ROOT" config user.name || true)"$' "$SCRIPT_FILE"
+grep -q '^JJ_USER_EMAIL="\$(git -C "\$ROOT" config user.email || true)"$' "$SCRIPT_FILE"
+grep -q '^  log_change "Configuration" "jj config" "\$change_name" "\$output_path" "Configured jj identity defaults"$' "$SCRIPT_FILE"
+echo "jj config checks passed"
