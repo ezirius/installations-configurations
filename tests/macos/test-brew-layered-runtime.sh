@@ -55,11 +55,19 @@ STATE_DIR="\${STATE_DIR:?}"
 case "\$1" in
   shellenv) ;;
   --prefix) printf '%s\n' "$BREW_PREFIX" ;;
-  list) exit 1 ;;
-  bundle)
+  list)
+    if [[ "\$2" == --versions ]]; then
+      [[ -f "\$STATE_DIR/installed-formula-\$3" ]] && printf '%s 1.0.0\n' "\$3" || exit 1
+    elif [[ "\$2" == --cask && "\$3" == --versions ]]; then
+      [[ -f "\$STATE_DIR/installed-cask-\$4" ]] && printf '%s 1.0.0\n' "\$4" || exit 1
+    fi
+    ;;
+  install)
     printf '%s\n' "\$*" >> "\$STATE_DIR/brew.log"
-    if [[ "\$2" == check ]]; then
-      exit 1
+    if [[ "\$2" == --cask ]]; then
+      : > "\$STATE_DIR/installed-cask-\$3"
+    else
+      : > "\$STATE_DIR/installed-formula-\$2"
     fi
     ;;
   *) exit 0 ;;
@@ -69,8 +77,7 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$REPO_DIR/scripts/macos/brew-install" >/dev/null
 
-grep -Fq -- 'bundle check --file=' "$STATE_DIR/brew.log"
-grep -Fq -- 'shared-macos.Brewfile' "$STATE_DIR/brew.log"
-grep -Fq -- 'maldoria-macos.Brewfile' "$STATE_DIR/brew.log"
+grep -Fq -- 'install caddy' "$STATE_DIR/brew.log"
+grep -Fq -- 'install --cask ghostty' "$STATE_DIR/brew.log"
 
 echo "Brew layered runtime checks passed"

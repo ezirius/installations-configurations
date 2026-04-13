@@ -8,8 +8,7 @@ MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
 SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-upgrade"
-mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
-mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew"
+mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX" "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cp "$ROOT/scripts/macos/brew-upgrade" "$REPO_DIR/scripts/macos/brew-upgrade"
@@ -58,16 +57,19 @@ STATE_DIR="\${STATE_DIR:?}"
 case "\$1" in
   shellenv) ;;
   --prefix) printf '%s\n' "$BREW_PREFIX" ;;
-  list) exit 1 ;;
+  list)
+    if [[ "\$2" == --versions ]]; then
+      [[ -f "\$STATE_DIR/installed-formula-\$3" ]] && printf '%s 1.0.0\n' "\$3" || exit 1
+    elif [[ "\$2" == --cask && "\$3" == --versions ]]; then
+      [[ -f "\$STATE_DIR/installed-cask-\$4" ]] && printf '%s 1.0.0\n' "\$4" || exit 1
+    fi
+    ;;
   update)
     if [[ -f "\$STATE_DIR/up-to-date" ]]; then
       printf 'Already up-to-date.\n'
     else
       printf 'Updated 1 tap (homebrew/core).\n'
     fi
-    ;;
-  bundle)
-    printf '%s\n' "\$*" >> "\$STATE_DIR/brew.log"
     ;;
   outdated)
     if [[ "\$2" == --formula && -f "\$STATE_DIR/outdated-formula-\$3" ]]; then
@@ -92,15 +94,28 @@ EOF
 
 STATE_DIR="$TMPDIR/state-updated"
 mkdir -p "$STATE_DIR"
-touch "$STATE_DIR/outdated-formula-caddy" "$STATE_DIR/outdated-cask-ghostty"
+touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty" "$STATE_DIR/outdated-formula-caddy" "$STATE_DIR/outdated-cask-ghostty"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
 LOG_FILE="$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers/Maldoria Installations and Configurations-$(date '+%Y%m%d')---------.csv"
 assert_contains "$LOG_FILE" 'Homebrew metadata' 'brew-upgrade logs metadata updates when update changes state'
 assert_contains "$STATE_DIR/brew.log" 'upgrade caddy' 'brew-upgrade upgrades outdated formulae'
 assert_contains "$STATE_DIR/brew.log" 'upgrade --cask ghostty' 'brew-upgrade upgrades outdated casks'
 
-STATE_DIR="$TMPDIR/state-up-to-date"
+STATE_DIR="$TMPDIR/state-missing"
 mkdir -p "$STATE_DIR"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
+if [[ -f "$STATE_DIR/brew.log" ]]; then
+  printf 'assertion failed: brew-upgrade should not install or upgrade missing entries\n' >&2
+  exit 1
+fi
+
+STATE_DIR="$TMPDIR/state-up-to-date"
+mkdir -p "$STATE_DIR"
+touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty" "$STATE_DIR/up-to-date"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
+if [[ -f "$STATE_DIR/brew.log" ]]; then
+  printf 'assertion failed: brew-upgrade should not run upgrades when entries are already current\n' >&2
+  exit 1
+fi
 
 echo "Brew upgrade runtime checks passed"

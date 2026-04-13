@@ -58,14 +58,19 @@ STATE_DIR="\${STATE_DIR:?}"
 case "\$1" in
   shellenv) ;;
   --prefix) printf '%s\n' "$BREW_PREFIX" ;;
-  list) exit 1 ;;
-  bundle)
+  list)
+    if [[ "\$2" == --versions ]]; then
+      [[ -f "\$STATE_DIR/installed-formula-\$3" ]] && printf '%s 1.0.0\n' "\$3" || exit 1
+    elif [[ "\$2" == --cask && "\$3" == --versions ]]; then
+      [[ -f "\$STATE_DIR/installed-cask-\$4" ]] && printf '%s 1.0.0\n' "\$4" || exit 1
+    fi
+    ;;
+  install)
     printf '%s\n' "\$*" >> "\$STATE_DIR/brew.log"
-    if [[ "\$2" == check ]]; then
-      if [[ -f "\$STATE_DIR/bundle-ok" ]]; then
-        exit 0
-      fi
-      exit 1
+    if [[ "\$2" == --cask ]]; then
+      : > "\$STATE_DIR/installed-cask-\$3"
+    else
+      : > "\$STATE_DIR/installed-formula-\$2"
     fi
     ;;
   *) exit 0 ;;
@@ -81,17 +86,18 @@ EOF
 
 STATE_DIR="$TMPDIR/state-idempotent"
 mkdir -p "$STATE_DIR"
-touch "$STATE_DIR/bundle-ok"
+touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
-if grep -Fq -- 'bundle install' "$STATE_DIR/brew.log" 2>/dev/null; then
-  printf 'assertion failed: brew-install should not run brew bundle install when check succeeds\n' >&2
+if [[ -f "$STATE_DIR/brew.log" ]]; then
+  printf 'assertion failed: brew-install should not run install commands when entries already exist\n' >&2
   exit 1
 fi
 
 STATE_DIR="$TMPDIR/state-install"
 mkdir -p "$STATE_DIR"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
-assert_contains "$STATE_DIR/brew.log" 'bundle install --file=' 'brew-install applies the Brewfile when needed'
+assert_contains "$STATE_DIR/brew.log" 'install caddy' 'brew-install installs missing formulae from the Brewfile'
+assert_contains "$STATE_DIR/brew.log" 'install --cask ghostty' 'brew-install installs missing casks from the Brewfile'
 
 STATE_DIR="$TMPDIR/state-missing-brewfile"
 mkdir -p "$STATE_DIR"

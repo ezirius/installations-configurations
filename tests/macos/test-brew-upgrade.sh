@@ -8,6 +8,7 @@ grep -q '^  log_change "Installation" "Homebrew metadata" "Updated" "\$BREW_PREF
 grep -q '^upgrade_brewfile_entries() {$' "$SCRIPT_FILE"
 grep -q '^  upgrade_brewfile_entries "\$(shared_platform_config_path "config/brew" "Brewfile")"$' "$SCRIPT_FILE"
 grep -q '^entry_is_outdated() {$' "$SCRIPT_FILE"
+! grep -q 'brew bundle install --file=' "$SCRIPT_FILE"
 grep -q 'if entry_is_outdated "brew" "\$formula"; then$' "$SCRIPT_FILE"
 grep -q 'brew upgrade "\$formula"$' "$SCRIPT_FILE"
 grep -q 'if entry_is_outdated "cask" "\$cask"; then$' "$SCRIPT_FILE"

@@ -68,6 +68,8 @@ PY
 
 process_brewfile() {
   local brewfile_path="$1"
+  local entry_type
+  local entry_name
 
   echo "==> Checking Brewfile: $brewfile_path"
   [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
@@ -75,14 +77,20 @@ process_brewfile() {
   write_brewfile_entries "$brewfile_path"
   snapshot_brewfile_state "$BEFORE_FILE"
 
-  echo "==> Checking Brewfile state"
-  if brew bundle check --file="$brewfile_path"; then
-    echo "Brewfile already satisfied: $brewfile_path"
-    return 0
-  fi
+  echo "==> Installing missing Brewfile entries"
+  while IFS='|' read -r entry_type entry_name; do
+    [[ -n "$entry_name" ]] || continue
 
-  echo "==> Applying Brewfile: $brewfile_path"
-  brew bundle install --file="$brewfile_path"
+    if [[ "$entry_type" == "brew" ]]; then
+      if ! brew list --versions "$entry_name" >/dev/null 2>&1; then
+        brew install "$entry_name"
+      fi
+    else
+      if ! brew list --cask --versions "$entry_name" >/dev/null 2>&1; then
+        brew install --cask "$entry_name"
+      fi
+    fi
+  done < "$ENTRIES_FILE"
 
   snapshot_brewfile_state "$AFTER_FILE"
   "$PYTHON3_COMMAND" - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
@@ -103,8 +111,6 @@ for (entry_type, name), after_data in after.items():
     before_data = before[(entry_type, name)]
     if before_data["state"] == "missing" and after_data["state"] == "installed":
         print(f"{entry_type}|{name}|Installed")
-    elif before_data["state"] == "installed" and after_data["state"] == "installed" and before_data["version"] != after_data["version"]:
-        print(f"{entry_type}|{name}|Upgraded")
 PY
 
   while IFS='|' read -r entry_type entry_name change_name; do
@@ -159,4 +165,4 @@ else
   fi
 fi
 
-echo "==> Homebrew and Brewfile entries are installed"
+echo "==> Homebrew and missing Brewfile entries are installed"

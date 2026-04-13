@@ -83,6 +83,8 @@ PY
 
 upgrade_brewfile_entries() {
   local brewfile_path="$1"
+  local entry_type
+  local entry_name
 
   echo "==> Checking Brewfile: $brewfile_path"
   [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
@@ -90,42 +92,20 @@ upgrade_brewfile_entries() {
   write_brewfile_entries "$brewfile_path"
   snapshot_brewfile_state "$BEFORE_FILE"
 
-  echo "==> Ensuring Brewfile entries are installed: $brewfile_path"
-  brew bundle install --file="$brewfile_path"
+  echo "==> Upgrading installed outdated Brewfile entries: $brewfile_path"
+  while IFS='|' read -r entry_type entry_name; do
+    [[ -n "$entry_name" ]] || continue
 
-  "$PYTHON3_COMMAND" - "$ENTRIES_FILE" <<'PY' | while IFS= read -r formula; do
-import pathlib
-import sys
-
-entries = []
-for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
-    entry_type, entry_name = line.split('|', 1)
-    if entry_type == 'brew':
-        entries.append(entry_name)
-print('\n'.join(entries))
-PY
-    [[ -n "$formula" ]] || continue
-    if entry_is_outdated "brew" "$formula"; then
-      brew upgrade "$formula"
+    if [[ "$entry_type" == "brew" ]]; then
+      if brew list --versions "$entry_name" >/dev/null 2>&1 && entry_is_outdated "brew" "$entry_name"; then
+        brew upgrade "$entry_name"
+      fi
+    else
+      if brew list --cask --versions "$entry_name" >/dev/null 2>&1 && entry_is_outdated "cask" "$entry_name"; then
+        brew upgrade --cask "$entry_name"
+      fi
     fi
-  done
-
-  "$PYTHON3_COMMAND" - "$ENTRIES_FILE" <<'PY' | while IFS= read -r cask; do
-import pathlib
-import sys
-
-entries = []
-for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
-    entry_type, entry_name = line.split('|', 1)
-    if entry_type == 'cask':
-        entries.append(entry_name)
-print('\n'.join(entries))
-PY
-    [[ -n "$cask" ]] || continue
-    if entry_is_outdated "cask" "$cask"; then
-      brew upgrade --cask "$cask"
-    fi
-  done
+  done < "$ENTRIES_FILE"
 
   snapshot_brewfile_state "$AFTER_FILE"
 
@@ -145,9 +125,7 @@ after = read_state(sys.argv[2])
 
 for (entry_type, name), after_data in after.items():
     before_data = before[(entry_type, name)]
-    if before_data['state'] == 'missing' and after_data['state'] == 'installed':
-        print(f'{name}|Installed')
-    elif before_data['state'] == 'installed' and after_data['state'] == 'installed' and before_data['version'] != after_data['version']:
+    if before_data['state'] == 'installed' and after_data['state'] == 'installed' and before_data['version'] != after_data['version']:
         print(f'{name}|Upgraded')
 PY
 
