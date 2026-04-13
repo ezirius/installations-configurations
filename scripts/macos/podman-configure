@@ -97,7 +97,7 @@ PYTHON3_COMMAND="$(preferred_python3_command)"
 
 echo "==> Checking podman"
 if ! command -v podman >/dev/null 2>&1; then
-  fail "podman is not installed; run scripts/macos/bootstrap or scripts/macos/brew-upgrade first"
+  fail "podman is not installed; run scripts/macos/brew-configure or scripts/macos/brew-upgrade first"
 fi
 
 echo "==> Checking source containers.conf"

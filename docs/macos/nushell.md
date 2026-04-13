@@ -39,7 +39,7 @@ The current shared Nushell workflow also integrates:
 - `jq` and `yq` helper commands
 - `micro` as the default editor target for fuzzy file-open commands
 
-`scripts/macos/jj-configure` renders the managed `jj` config from this repository clone's local `git config user.name` and `git config user.email`, so set those values in this clone before running the managed shell/bootstrap flow.
+`scripts/macos/jj-configure` renders the managed `jj` config from this repository clone's local `git config user.name` and `git config user.email`, so set those values in this clone before running the managed shell/brew-bootstrap flow.
 
 You also need `python3` available before running the managed setup scripts because the config-deployment path uses it before any Brewfile-managed packages are installed. Once Homebrew Python is installed from the shared Brewfile, the scripts prefer that managed Python automatically.
 
@@ -56,7 +56,7 @@ Run either:
 3. `scripts/macos/brew-configure`
 4. `scripts/macos/brew-service start`
 
-or run `scripts/macos/bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
+or run `scripts/macos/brew-bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
 
 ## Verification
 

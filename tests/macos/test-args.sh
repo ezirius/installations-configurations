@@ -29,7 +29,7 @@ assert_rejects_args() {
   assert_contains "$error_file" "$expected_message" "script reports invalid argument usage clearly"
 }
 
-assert_rejects_args "$ROOT/scripts/macos/bootstrap" 'takes no arguments'
+assert_rejects_args "$ROOT/scripts/macos/brew-bootstrap" 'takes no arguments'
 assert_rejects_args "$ROOT/scripts/macos/brew-configure" 'takes no arguments'
 assert_rejects_args "$ROOT/scripts/macos/caddy-trust" 'takes no arguments'
 assert_rejects_args "$ROOT/scripts/macos/caddy-service" 'takes exactly 1 argument'

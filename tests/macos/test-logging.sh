@@ -47,7 +47,7 @@ grep -q '^initialize_change_log "scripts/macos/jj-configure"$' "$ROOT/scripts/ma
 grep -q '^initialize_change_log "scripts/macos/nushell-configure"$' "$ROOT/scripts/macos/nushell-configure"
 grep -q '^initialize_change_log "scripts/macos/system-configure"$' "$ROOT/scripts/macos/system-configure"
 grep -q '^initialize_change_log "scripts/macos/podman-configure"$' "$ROOT/scripts/macos/podman-configure"
-! grep -q '^initialize_change_log ' "$ROOT/scripts/macos/bootstrap"
+! grep -q '^initialize_change_log ' "$ROOT/scripts/macos/brew-bootstrap"
 ! grep -q '^initialize_change_log ' "$ROOT/scripts/macos/caddy-service"
 ! grep -q '^initialize_change_log ' "$ROOT/scripts/macos/podman-check"
 

@@ -13,6 +13,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 cp "$ROOT/scripts/macos/brew-install" "$REPO_DIR/scripts/macos/brew-install"
 cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
+chmod +x "$REPO_DIR/scripts/macos/brew-install"
 
 cat > "$REPO_DIR/config/brew/shared-macos.Brewfile" <<'EOF'
 brew "caddy"
@@ -20,6 +21,15 @@ EOF
 cat > "$REPO_DIR/config/brew/maldoria-macos.Brewfile" <<'EOF'
 cask "ghostty"
 EOF
+
+git -C "$REPO_DIR" init -b main >/dev/null
+git -C "$REPO_DIR" config user.name 'Repo User'
+git -C "$REPO_DIR" config user.email 'repo.user@example.invalid'
+git -C "$REPO_DIR" add . >/dev/null
+git -C "$REPO_DIR" commit -m 'Initial' >/dev/null
+git -C "$REPO_DIR" init --bare "$TMPDIR/remote.git" >/dev/null
+git -C "$REPO_DIR" remote add origin "$TMPDIR/remote.git"
+git -C "$REPO_DIR" push -u origin main >/dev/null 2>&1
 
 cat > "$MOCK_BIN/uname" <<'EOF'
 #!/usr/bin/env bash

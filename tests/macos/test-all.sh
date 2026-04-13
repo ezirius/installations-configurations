@@ -45,6 +45,7 @@ bash -n \
   tests/macos/test-args.sh \
   tests/macos/test-git-config.sh \
   tests/macos/test-git-config-runtime.sh \
+  tests/macos/test-git-guard-runtime.sh \
   tests/macos/test-repo-remotes.sh \
   tests/macos/test-ghostty-config.sh \
   tests/macos/test-ghostty-runtime.sh \
@@ -85,6 +86,7 @@ bash -n \
 "$ROOT/tests/macos/test-args.sh"
 "$ROOT/tests/macos/test-git-config.sh"
 "$ROOT/tests/macos/test-git-config-runtime.sh"
+"$ROOT/tests/macos/test-git-guard-runtime.sh"
 "$ROOT/tests/macos/test-repo-remotes.sh"
 "$ROOT/tests/macos/test-ghostty-config.sh"
 "$ROOT/tests/macos/test-ghostty-runtime.sh"

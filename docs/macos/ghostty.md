@@ -22,14 +22,14 @@ The wider shared developer-tooling stack uses the same blue dark palette family 
 
 Run either:
 
-1. Set this repository clone's local `git config user.name` and `git config user.email` before the wider managed flow if you plan to use `scripts/macos/bootstrap` or `scripts/macos/jj-configure`
+1. Set this repository clone's local `git config user.name` and `git config user.email` before the wider managed flow if you plan to use `scripts/macos/brew-bootstrap` or `scripts/macos/jj-configure`
 2. Ensure `python3` is already available on the machine
 3. `scripts/macos/brew-install`
 4. `scripts/macos/brew-upgrade`
 5. `scripts/macos/brew-configure`
 6. `scripts/macos/brew-service start`
 
-or run `scripts/macos/bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
+or run `scripts/macos/brew-bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
 
 ## Verification
 

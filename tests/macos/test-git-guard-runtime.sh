@@ -23,6 +23,9 @@ cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
 cat > "$REPO_DIR/config/brew/shared-macos.Brewfile" <<'EOF'
 brew "caddy"
 EOF
+cat > "$REPO_DIR/README.md" <<'EOF'
+test repo
+EOF
 
 git -C "$REPO_DIR" init -b main >/dev/null
 git -C "$REPO_DIR" config user.name 'Repo User'

@@ -40,7 +40,7 @@ Run these in order:
 4. Run `scripts/macos/brew-service start`
 5. Optionally run `scripts/macos/podman-check`
 
-Or run `scripts/macos/bootstrap` to execute the same managed script sequence in one command once the prerequisites above are already in place.
+Or run `scripts/macos/brew-bootstrap` to execute the same managed script sequence in one command once the prerequisites above are already in place.
 
 The shared macOS Brewfile installs the default tooling for this setup, including `ghostty`, `nushell`, `git`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `jq`, `just`, `uv`, `starship`, `atuin`, `micro`, `vim`, `zellij`, `jj`, `caddy`, and the container/inspection toolchain. The current repository policy is to keep general macOS config in `shared-macos` files, reserve `shared-linux` for Linux-only support when it is added, and keep host-specific config limited to Git/SSH metadata such as `config/ssh/maldoria.conf`. The scripts can apply host-specific Brewfiles later if those are added, but the current repository only ships the shared macOS Brewfile. The managed terminal workflow is Ghostty launching Nushell directly, while the macOS default login shell stays unchanged.
 
@@ -56,7 +56,7 @@ The normal Caddy change workflow is:
 
 For local HTTPS trust, run `scripts/macos/caddy-trust` after the service is running.
 
-`jj` is managed through `~/.config/jj/config.toml`, and `scripts/macos/jj-configure` renders that file from this repository clone's local `git config user.name` and `git config user.email`. Set those values in this clone before running `jj-configure` or `bootstrap`.
+`jj` is managed through `~/.config/jj/config.toml`, and `scripts/macos/jj-configure` renders that file from this repository clone's local `git config user.name` and `git config user.email`. Set those values in this clone before running `jj-configure` or `brew-bootstrap`.
 
 `scripts/macos/devtools-configure` deploys the shared app config for the CLI and editor stack into `~/.config`. This includes blue dark-mode theme defaults for `bat`, `eza`, `tlrc`, `starship`, `zellij`, `btop`, `micro`, `vim`, and `lazygit`, plus managed behaviour/config for tools such as `fd` and `atuin`. On macOS it also bridges `~/.config/lazygit` and `~/.config/zellij` into the Application Support paths those tools still probe by default, and writes `~/.vimrc` as a bridge to `~/.config/vim/vimrc`.
 

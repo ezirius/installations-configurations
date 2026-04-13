@@ -2,13 +2,29 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT_FILE="$ROOT/scripts/macos/brew-install"
 TMPDIR="$(mktemp -d)"
+REPO_DIR="$TMPDIR/repo"
 MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
+SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-install"
 mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
+mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew"
 trap 'rm -rf "$TMPDIR"' EXIT
+
+cp "$ROOT/scripts/macos/brew-install" "$REPO_DIR/scripts/macos/brew-install"
+cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
+cp "$ROOT/config/brew/shared-macos.Brewfile" "$REPO_DIR/config/brew/shared-macos.Brewfile"
+chmod +x "$SCRIPT_FILE"
+
+git -C "$REPO_DIR" init -b main >/dev/null
+git -C "$REPO_DIR" config user.name 'Repo User'
+git -C "$REPO_DIR" config user.email 'repo.user@example.invalid'
+git -C "$REPO_DIR" add . >/dev/null
+git -C "$REPO_DIR" commit -m 'Initial' >/dev/null
+git -C "$REPO_DIR" init --bare "$TMPDIR/remote.git" >/dev/null
+git -C "$REPO_DIR" remote add origin "$TMPDIR/remote.git"
+git -C "$REPO_DIR" push -u origin main >/dev/null 2>&1
 
 assert_contains() {
   local file="$1" needle="$2" message="$3"

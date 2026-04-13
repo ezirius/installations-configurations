@@ -15,7 +15,7 @@ grep -q '^apply_machine_setting() {$' "$SCRIPT_FILE"
 grep -q '^machine_is_running() {$' "$SCRIPT_FILE"
 grep -q '^prepare_machine_for_update() {$' "$SCRIPT_FILE"
 grep -q '^restore_machine_after_update() {$' "$SCRIPT_FILE"
-grep -q '^  fail "podman is not installed; run scripts/macos/bootstrap or scripts/macos/brew-upgrade first"$' "$SCRIPT_FILE"
+grep -q '^  fail "podman is not installed; run scripts/macos/brew-configure or scripts/macos/brew-upgrade first"$' "$SCRIPT_FILE"
 grep -q '^  podman machine init "\$MACHINE_NAME"$' "$SCRIPT_FILE"
 grep -q '^  podman machine start "\$MACHINE_NAME"$' "$SCRIPT_FILE"
 if ! command -v podman >/dev/null 2>&1; then

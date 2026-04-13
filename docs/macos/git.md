@@ -18,6 +18,8 @@ Before running `scripts/macos/git-configure`:
 3. Ensure the 1Password SSH agent socket is available on the machine
 4. Ensure the shared Brewfile-managed `git`, `git-delta`, and `micro` tooling is already installed if you want the full managed editor/review defaults to be effective immediately
 
+The package-management commands `scripts/macos/brew-install` and `scripts/macos/brew-upgrade` require this repository to be committed and pushed before they run.
+
 ## What gets configured
 
 `scripts/macos/git-configure`:

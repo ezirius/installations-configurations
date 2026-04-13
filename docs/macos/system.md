@@ -47,7 +47,7 @@ Run either:
 3. `scripts/macos/brew-configure`
 4. `scripts/macos/brew-service start`
 
-or run `scripts/macos/bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
+or run `scripts/macos/brew-bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
 
 ## Verification
 
