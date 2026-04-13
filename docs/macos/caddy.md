@@ -32,7 +32,7 @@ The current shared Caddyfile is:
 
 This repository keeps `caddy` running in the background with Homebrew services:
 
-- `scripts/macos/caddy-service start`
+- `scripts/macos/brew-service start`
 
 That uses:
 
@@ -54,7 +54,7 @@ That uses:
 
 For config changes without downtime, use:
 
-- `scripts/macos/caddy-service reload`
+- `scripts/macos/brew-service reload`
 
 That uses:
 
@@ -66,7 +66,7 @@ When you need to change the reverse proxy config:
 
 1. Edit `config/caddy/shared.Caddyfile`
 2. Run `scripts/macos/caddy-configure`
-3. Run `scripts/macos/caddy-service reload`
+3. Run `scripts/macos/brew-service reload`
 
 That keeps the repository as the source of truth, re-validates and deploys the managed Caddyfile, and reloads the running service without stopping it.
 
@@ -75,11 +75,9 @@ That keeps the repository as the source of truth, re-validates and deploys the m
 Run either:
 
 1. `scripts/macos/brew-install`
-2. `scripts/macos/brewfile-install`
-3. `scripts/macos/brew-upgrade`
-4. `scripts/macos/caddy-configure`
-5. `scripts/macos/caddy-service start`
-6. `scripts/macos/caddy-trust`
+2. `scripts/macos/brew-upgrade`
+3. `scripts/macos/brew-configure`
+4. `scripts/macos/brew-service start`
 
 or run `scripts/macos/bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
 

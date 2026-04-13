@@ -7,8 +7,9 @@ cd "$ROOT"
 
 bash -n \
   scripts/macos/brew-install \
-  scripts/macos/brewfile-install \
   scripts/macos/brew-upgrade \
+  scripts/macos/brew-configure \
+  scripts/macos/brew-service \
   scripts/macos/caddy-configure \
   scripts/macos/caddy-service \
   scripts/macos/caddy-trust \
@@ -19,11 +20,13 @@ bash -n \
   scripts/macos/nushell-configure \
   scripts/macos/system-configure \
   scripts/macos/podman-check \
-  scripts/macos/podman-machine-install \
-  scripts/macos/bootstrap \
+  scripts/macos/podman-configure \
+  scripts/macos/brew-bootstrap \
   tests/macos/test-brewfile.sh \
   tests/macos/test-brew-install.sh \
   tests/macos/test-brew-install-runtime.sh \
+  tests/macos/test-brew-configure.sh \
+  tests/macos/test-brew-service.sh \
   tests/macos/test-brewfile-runtime.sh \
   tests/macos/test-brew-layered-runtime.sh \
   tests/macos/test-brew-upgrade.sh \
@@ -51,9 +54,9 @@ bash -n \
   tests/macos/test-nushell-runtime.sh \
   tests/macos/test-system-config.sh \
   tests/macos/test-system-runtime.sh \
-  tests/macos/test-bootstrap.sh \
-  tests/macos/test-bootstrap-runtime.sh \
-  tests/macos/test-bootstrap-fail-fast-runtime.sh \
+  tests/macos/test-brew-bootstrap.sh \
+  tests/macos/test-brew-bootstrap-runtime.sh \
+  tests/macos/test-brew-bootstrap-fail-fast-runtime.sh \
   tests/macos/test-logging.sh \
   tests/macos/test-podman.sh \
   tests/macos/test-podman-machine-runtime.sh \
@@ -62,6 +65,8 @@ bash -n \
 "$ROOT/tests/macos/test-brewfile.sh"
 "$ROOT/tests/macos/test-brew-install.sh"
 "$ROOT/tests/macos/test-brew-install-runtime.sh"
+"$ROOT/tests/macos/test-brew-configure.sh"
+"$ROOT/tests/macos/test-brew-service.sh"
 "$ROOT/tests/macos/test-brewfile-runtime.sh"
 "$ROOT/tests/macos/test-brew-layered-runtime.sh"
 "$ROOT/tests/macos/test-brew-upgrade.sh"
@@ -89,9 +94,9 @@ bash -n \
 "$ROOT/tests/macos/test-nushell-runtime.sh"
 "$ROOT/tests/macos/test-system-config.sh"
 "$ROOT/tests/macos/test-system-runtime.sh"
-"$ROOT/tests/macos/test-bootstrap.sh"
-"$ROOT/tests/macos/test-bootstrap-runtime.sh"
-"$ROOT/tests/macos/test-bootstrap-fail-fast-runtime.sh"
+"$ROOT/tests/macos/test-brew-bootstrap.sh"
+"$ROOT/tests/macos/test-brew-bootstrap-runtime.sh"
+"$ROOT/tests/macos/test-brew-bootstrap-fail-fast-runtime.sh"
 "$ROOT/tests/macos/test-logging.sh"
 "$ROOT/tests/macos/test-podman.sh"
 "$ROOT/tests/macos/test-podman-machine-runtime.sh"

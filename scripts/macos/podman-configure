@@ -92,7 +92,7 @@ require_macos
 require_homebrew
 require_clt
 require_command cmp
-initialize_change_log "scripts/macos/podman-machine-install"
+initialize_change_log "scripts/macos/podman-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
 
 echo "==> Checking podman"

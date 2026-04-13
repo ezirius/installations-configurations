@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT_FILE="$ROOT/scripts/macos/podman-machine-install"
+SCRIPT_FILE="$ROOT/scripts/macos/podman-configure"
 TMPDIR="$(mktemp -d)"
 MOCK_BIN="$TMPDIR/bin"
 STATE_DIR="$TMPDIR/state"

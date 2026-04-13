@@ -30,7 +30,7 @@ find_trusted_keychain() {
 require_macos
 require_homebrew
 require_clt
-require_command caddy "Run scripts/macos/brewfile-install before trusting the Caddy local CA"
+require_command caddy "Run scripts/macos/brew-install before trusting the Caddy local CA"
 require_command security
 initialize_change_log "scripts/macos/caddy-trust"
 

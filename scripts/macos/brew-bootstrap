@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
+require_macos
+
+echo "==> Running macOS brew bootstrap"
+"$SCRIPT_DIR/brew-install"
+"$SCRIPT_DIR/brew-upgrade"
+"$SCRIPT_DIR/brew-configure"
+"$SCRIPT_DIR/brew-service" start
+
+echo "==> macOS brew bootstrap is complete"

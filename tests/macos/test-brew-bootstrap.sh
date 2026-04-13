@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT_FILE="$ROOT/scripts/macos/bootstrap"
+SCRIPT_FILE="$ROOT/scripts/macos/brew-bootstrap"
 test -f "$SCRIPT_FILE"
 grep -q '^source "\$SCRIPT_DIR/../../lib/shell/common.sh"$' "$SCRIPT_FILE"
 grep -q '^require_macos$' "$SCRIPT_FILE"
@@ -12,17 +12,9 @@ import sys
 lines = Path(sys.argv[1]).read_text().splitlines()
 expected = [
     '"$SCRIPT_DIR/brew-install"',
-    '"$SCRIPT_DIR/brewfile-install"',
     '"$SCRIPT_DIR/brew-upgrade"',
-    '"$SCRIPT_DIR/caddy-configure"',
-    '"$SCRIPT_DIR/caddy-service" start',
-    '"$SCRIPT_DIR/caddy-trust"',
-    '"$SCRIPT_DIR/ghostty-configure"',
-    '"$SCRIPT_DIR/jj-configure"',
-    '"$SCRIPT_DIR/nushell-configure"',
-    '"$SCRIPT_DIR/devtools-configure"',
-    '"$SCRIPT_DIR/system-configure"',
-    '"$SCRIPT_DIR/podman-machine-install"',
+    '"$SCRIPT_DIR/brew-configure"',
+    '"$SCRIPT_DIR/brew-service" start',
 ]
 
 positions = []
@@ -31,4 +23,4 @@ for item in expected:
 
 assert positions == sorted(positions)
 PY
-echo "Bootstrap checks passed"
+echo "Brew bootstrap checks passed"

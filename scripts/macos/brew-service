@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../lib/shell/common.sh"
+
+if [[ $# -ne 1 ]]; then
+  usage_error "$(basename "$0") takes exactly 1 argument: {start|stop|restart|reload|status}"
+fi
+
+ACTION="$1"
+
+case "$ACTION" in
+  start|stop|restart|reload|status) ;;
+  *)
+    usage_error "$(basename "$0") takes exactly 1 argument: {start|stop|restart|reload|status}"
+    ;;
+esac
+
+require_macos
+
+echo "==> Running managed Homebrew-backed service action: $ACTION"
+"$SCRIPT_DIR/caddy-service" "$ACTION"
+
+echo "==> Managed Homebrew-backed service action is complete"

@@ -6,7 +6,7 @@ The Podman machine defaults live in:
 
 - `config/podman/containers.conf`
 
-`scripts/macos/podman-machine-install` copies that file into:
+`scripts/macos/podman-configure` copies that file into:
 
 - `~/.config/containers/containers.conf`
 
@@ -21,7 +21,7 @@ The current shared defaults are intentionally conservative baseline values:
 
 ## What the script does
 
-`scripts/macos/podman-machine-install`:
+`scripts/macos/podman-configure`:
 
 1. validates that `podman` and the managed config source are available
 2. copies the managed `containers.conf` into `~/.config/containers/containers.conf`

@@ -8,6 +8,7 @@ if [[ $# -gt 1 ]]; then
   usage_error "$(basename "$0") takes at most 1 argument: [brewfile-path]"
 fi
 
+ROOT="$(repo_root)"
 BREWFILE_OVERRIDE="${1:-}"
 BREW_PREFIX=""
 ENTRIES_FILE=""
@@ -157,6 +158,8 @@ PY
 }
 
 require_macos
+require_command git
+require_clean_pushed_repo_state "$ROOT" "brew-upgrade"
 require_homebrew
 require_clt
 require_command cmp

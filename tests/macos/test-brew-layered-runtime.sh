@@ -11,7 +11,7 @@ BREW_PREFIX="$TMPDIR/homebrew"
 mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$STATE_DIR" "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-cp "$ROOT/scripts/macos/brewfile-install" "$REPO_DIR/scripts/macos/brewfile-install"
+cp "$ROOT/scripts/macos/brew-install" "$REPO_DIR/scripts/macos/brew-install"
 cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
 
 cat > "$REPO_DIR/config/brew/shared-macos.Brewfile" <<'EOF'
@@ -57,7 +57,7 @@ esac
 EOF
 chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BIN/python3" "$MOCK_BIN/brew"
 
-PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$REPO_DIR/scripts/macos/brewfile-install" >/dev/null
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$REPO_DIR/scripts/macos/brew-install" >/dev/null
 
 grep -Fq -- 'bundle check --file=' "$STATE_DIR/brew.log"
 grep -Fq -- 'shared-macos.Brewfile' "$STATE_DIR/brew.log"

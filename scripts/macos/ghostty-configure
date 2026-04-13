@@ -89,7 +89,7 @@ echo "==> Checking Ghostty config source"
 [[ -f "$SOURCE_CONFIG" ]] || fail "Ghostty config not found: $SOURCE_CONFIG"
 
 NU_PATH="$(homebrew_root_path)/bin/nu"
-[[ -x "$NU_PATH" ]] || fail "nushell is not installed at $NU_PATH; run scripts/macos/brewfile-install first"
+[[ -x "$NU_PATH" ]] || fail "nushell is not installed at $NU_PATH; run scripts/macos/brew-install first"
 
 echo "==> Deploying Ghostty config"
 write_rendered_config "$SOURCE_CONFIG" "$TARGET_INCLUDE" "$NU_PATH"

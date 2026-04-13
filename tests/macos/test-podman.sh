@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT_FILE="$ROOT/scripts/macos/podman-machine-install"
+SCRIPT_FILE="$ROOT/scripts/macos/podman-configure"
 test -f "$ROOT/config/podman/containers.conf"
 test -f "$SCRIPT_FILE"
 grep -q '^\[machine\]$' "$ROOT/config/podman/containers.conf"

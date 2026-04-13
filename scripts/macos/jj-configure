@@ -61,7 +61,7 @@ require_homebrew
 require_clt
 require_command cmp
 require_command git "Install Git before running this script"
-require_command jj "Run scripts/macos/brewfile-install before configuring jj"
+require_command jj "Run scripts/macos/brew-install before configuring jj"
 require_git_repo_path "$ROOT"
 initialize_change_log "scripts/macos/jj-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"

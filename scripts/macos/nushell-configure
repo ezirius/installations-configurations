@@ -109,10 +109,10 @@ require_macos
 require_homebrew
 require_clt
 require_command cmp
-require_command atuin "Run scripts/macos/brewfile-install before configuring Nushell"
-require_command starship "Run scripts/macos/brewfile-install before configuring Nushell"
-require_command zoxide "Run scripts/macos/brewfile-install before configuring Nushell"
-require_command jj "Run scripts/macos/brewfile-install before configuring Nushell"
+require_command atuin "Run scripts/macos/brew-install before configuring Nushell"
+require_command starship "Run scripts/macos/brew-install before configuring Nushell"
+require_command zoxide "Run scripts/macos/brew-install before configuring Nushell"
+require_command jj "Run scripts/macos/brew-install before configuring Nushell"
 initialize_change_log "scripts/macos/nushell-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
 

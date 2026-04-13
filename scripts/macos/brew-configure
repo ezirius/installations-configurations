@@ -10,18 +10,14 @@ fi
 
 require_macos
 
-echo "==> Running macOS bootstrap"
-"$SCRIPT_DIR/brew-install"
-"$SCRIPT_DIR/brewfile-install"
-"$SCRIPT_DIR/brew-upgrade"
+echo "==> Running managed Homebrew-backed configuration"
 "$SCRIPT_DIR/caddy-configure"
-"$SCRIPT_DIR/caddy-service" start
 "$SCRIPT_DIR/caddy-trust"
 "$SCRIPT_DIR/ghostty-configure"
 "$SCRIPT_DIR/jj-configure"
 "$SCRIPT_DIR/nushell-configure"
 "$SCRIPT_DIR/devtools-configure"
 "$SCRIPT_DIR/system-configure"
-"$SCRIPT_DIR/podman-machine-install"
+"$SCRIPT_DIR/podman-configure"
 
-echo "==> macOS bootstrap is complete"
+echo "==> Homebrew-backed configuration is complete"

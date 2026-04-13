@@ -43,9 +43,9 @@ This script needs:
 Run either:
 
 1. `scripts/macos/brew-install`
-2. `scripts/macos/brewfile-install`
-3. `scripts/macos/brew-upgrade`
-4. `scripts/macos/system-configure`
+2. `scripts/macos/brew-upgrade`
+3. `scripts/macos/brew-configure`
+4. `scripts/macos/brew-service start`
 
 or run `scripts/macos/bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
 

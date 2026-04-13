@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT_FILE="$ROOT/scripts/macos/brewfile-install"
+SCRIPT_FILE="$ROOT/scripts/macos/brew-install"
 TMPDIR="$(mktemp -d)"
 MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
@@ -68,21 +68,21 @@ mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/bundle-ok"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
 if grep -Fq -- 'bundle install' "$STATE_DIR/brew.log" 2>/dev/null; then
-  printf 'assertion failed: brewfile-install should not run brew bundle install when check succeeds\n' >&2
+  printf 'assertion failed: brew-install should not run brew bundle install when check succeeds\n' >&2
   exit 1
 fi
 
 STATE_DIR="$TMPDIR/state-install"
 mkdir -p "$STATE_DIR"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
-assert_contains "$STATE_DIR/brew.log" 'bundle install --file=' 'brewfile-install applies the Brewfile when needed'
+assert_contains "$STATE_DIR/brew.log" 'bundle install --file=' 'brew-install applies the Brewfile when needed'
 
 STATE_DIR="$TMPDIR/state-missing-brewfile"
 mkdir -p "$STATE_DIR"
 if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$TMPDIR/missing.Brewfile" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
-  printf 'assertion failed: brewfile-install should fail for a missing Brewfile\n' >&2
+  printf 'assertion failed: brew-install should fail for a missing Brewfile\n' >&2
   exit 1
 fi
-assert_contains "$STATE_DIR/err" 'Brewfile not found' 'brewfile-install reports a missing Brewfile clearly'
+assert_contains "$STATE_DIR/err" 'Brewfile not found' 'brew-install reports a missing Brewfile clearly'
 
 echo "Brewfile runtime checks passed"

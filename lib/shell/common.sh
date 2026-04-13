@@ -109,6 +109,27 @@ require_git_repo_path() {
     || fail "Not a git repository: $repo_path"
 }
 
+require_clean_pushed_repo_state() {
+  local repo_path="$1"
+  local command_name="$2"
+  local upstream_ref
+  local ahead_count
+
+  require_git_repo_path "$repo_path"
+
+  if [[ -n "$(git -C "$repo_path" status --porcelain)" ]]; then
+    fail "Repository has uncommitted changes. Commit and push before running $command_name."
+  fi
+
+  upstream_ref="$(git -C "$repo_path" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  [[ -n "$upstream_ref" ]] || fail "Current branch has no upstream. Push the branch before running $command_name."
+
+  ahead_count="$(git -C "$repo_path" rev-list --count "$upstream_ref..HEAD" 2>/dev/null || printf '0')"
+  if [[ "$ahead_count" != "0" ]]; then
+    fail "Current branch has unpushed commits. Push before running $command_name."
+  fi
+}
+
 load_homebrew_shellenv() {
   if [[ -x /opt/homebrew/bin/brew ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"

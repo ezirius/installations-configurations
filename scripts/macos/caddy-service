@@ -26,7 +26,7 @@ esac
 require_macos
 require_homebrew
 require_clt
-require_command caddy "Run scripts/macos/brewfile-install before managing the Caddy service"
+require_command caddy "Run scripts/macos/brew-install before managing the Caddy service"
 
 BREW_PREFIX="$(brew --prefix)"
 TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"

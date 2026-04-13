@@ -5,7 +5,7 @@ This repository currently automates a macOS-focused setup flow for Homebrew, Cad
 ## Layout
 
 - `config/`
-  - `brew/` contains the shared platform Brewfiles applied by `scripts/macos/brewfile-install`
+  - `brew/` contains the shared platform Brewfiles applied by `scripts/macos/brew-install`
   - `caddy/` contains the shared Caddy config copied into the Homebrew Caddy service location
   - `podman/` contains Podman machine defaults copied into `~/.config/containers/`
   - `system/` contains shared and optional host-specific macOS system settings applied by `scripts/macos/system-configure`
@@ -35,24 +35,16 @@ git config user.email "you@example.com"
 Run these in order:
 
 1. Run `scripts/macos/brew-install`
-2. Run `scripts/macos/brewfile-install`
-3. Run `scripts/macos/brew-upgrade`
-4. Run `scripts/macos/caddy-configure`
-5. Run `scripts/macos/caddy-service start`
-6. Run `scripts/macos/caddy-trust`
-7. Run `scripts/macos/ghostty-configure`
-8. Run `scripts/macos/jj-configure`
-9. Run `scripts/macos/nushell-configure`
-10. Run `scripts/macos/devtools-configure`
-11. Run `scripts/macos/system-configure`
-12. Run `scripts/macos/podman-machine-install`
-13. Optionally run `scripts/macos/podman-check`
+2. Run `scripts/macos/brew-upgrade`
+3. Run `scripts/macos/brew-configure`
+4. Run `scripts/macos/brew-service start`
+5. Optionally run `scripts/macos/podman-check`
 
 Or run `scripts/macos/bootstrap` to execute the same managed script sequence in one command once the prerequisites above are already in place.
 
-The shared macOS Brewfile installs the default tooling for this setup, including `ghostty`, `nushell`, `git`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `jq`, `just`, `uv`, `starship`, `atuin`, `micro`, `vim`, `zellij`, `jj`, `caddy`, and the container/inspection toolchain. The current repository policy is to keep general macOS config in `shared-macos` files, reserve `shared-linux` for Linux-only support when it is added, and keep host-specific config limited to Git/SSH metadata such as `config/ssh/maldoria.conf`. The managed terminal workflow is Ghostty launching Nushell directly, while the macOS default login shell stays unchanged.
+The shared macOS Brewfile installs the default tooling for this setup, including `ghostty`, `nushell`, `git`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `jq`, `just`, `uv`, `starship`, `atuin`, `micro`, `vim`, `zellij`, `jj`, `caddy`, and the container/inspection toolchain. The current repository policy is to keep general macOS config in `shared-macos` files, reserve `shared-linux` for Linux-only support when it is added, and keep host-specific config limited to Git/SSH metadata such as `config/ssh/maldoria.conf`. The scripts can apply host-specific Brewfiles later if those are added, but the current repository only ships the shared macOS Brewfile. The managed terminal workflow is Ghostty launching Nushell directly, while the macOS default login shell stays unchanged.
 
-`scripts/macos/brew-install` first checks for Xcode Command Line Tools and triggers `xcode-select --install` if they are missing, then stops until that installation is complete. After that, it only checks for an existing Homebrew installation and stops with a manual-install message when Homebrew is missing. This repository does not execute the upstream moving installer script automatically because that path is not checksum-verifiable in this workflow.
+`scripts/macos/brew-install` first checks for Xcode Command Line Tools and triggers `xcode-select --install` if they are missing, then stops until that installation is complete. After that, it checks for an existing Homebrew installation, stops with a manual-install message when Homebrew is missing, and then satisfies the shared Brewfile package set. This repository does not execute the upstream moving installer script automatically because that path is not checksum-verifiable in this workflow.
 
 `caddy` is currently managed through the shared `config/caddy/shared.Caddyfile` and Homebrew's background service integration. The repository is structured so host-specific Caddy files can be added later if needed, but the current policy is to keep Caddy in the shared macOS layer and reserve host-specific config for Git/SSH items only.
 
@@ -67,6 +59,10 @@ For local HTTPS trust, run `scripts/macos/caddy-trust` after the service is runn
 `jj` is managed through `~/.config/jj/config.toml`, and `scripts/macos/jj-configure` renders that file from this repository clone's local `git config user.name` and `git config user.email`. Set those values in this clone before running `jj-configure` or `bootstrap`.
 
 `scripts/macos/devtools-configure` deploys the shared app config for the CLI and editor stack into `~/.config`. This includes blue dark-mode theme defaults for `bat`, `eza`, `tlrc`, `starship`, `zellij`, `btop`, `micro`, `vim`, and `lazygit`, plus managed behaviour/config for tools such as `fd` and `atuin`. On macOS it also bridges `~/.config/lazygit` and `~/.config/zellij` into the Application Support paths those tools still probe by default, and writes `~/.vimrc` as a bridge to `~/.config/vim/vimrc`.
+
+`scripts/macos/brew-configure` is the post-install umbrella command. It runs the managed configuration steps for Caddy, Ghostty, `jj`, Nushell, the shared devtools layer, the shared macOS system settings, and Podman.
+
+`scripts/macos/brew-service` is the service-lifecycle umbrella command. It currently manages the background Caddy service and accepts `start`, `stop`, `restart`, `reload`, and `status`.
 
 The managed shell integration remains Nushell-only. The Nushell autoload file wires together `fd`, `fzf`, `bat`, `eza`, `zoxide`, `atuin`, `starship`, `jj`, `direnv`, `jq`, and `yq`. No `bash` or `zsh` shell hooks are used for this workflow.
 

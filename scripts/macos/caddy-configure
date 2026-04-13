@@ -64,7 +64,7 @@ require_macos
 require_homebrew
 require_clt
 require_command cmp
-require_command caddy "Run scripts/macos/brewfile-install before configuring Caddy"
+require_command caddy "Run scripts/macos/brew-install before configuring Caddy"
 initialize_change_log "scripts/macos/caddy-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
 

@@ -4,14 +4,119 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
-if [[ $# -ne 0 ]]; then
-  usage_error "$(basename "$0") takes no arguments"
+if [[ $# -gt 1 ]]; then
+  usage_error "$(basename "$0") takes at most 1 argument: [brewfile-path]"
 fi
+
+ROOT="$(repo_root)"
+BREWFILE_OVERRIDE="${1:-}"
+BREW_PREFIX=""
+ENTRIES_FILE=""
+BEFORE_FILE=""
+AFTER_FILE=""
+CHANGES_FILE=""
+PYTHON3_COMMAND=""
+
+cleanup() {
+  rm -f "$ENTRIES_FILE" "$BEFORE_FILE" "$AFTER_FILE" "$CHANGES_FILE"
+}
+
+trap cleanup EXIT
+
+snapshot_brewfile_state() {
+  local output_file="$1"
+  local entry_type
+  local entry_name
+  local version_line
+
+  : > "$output_file"
+
+  while IFS='|' read -r entry_type entry_name; do
+    version_line=""
+
+    if [[ "$entry_type" == "brew" ]]; then
+      version_line="$(brew list --versions "$entry_name" 2>/dev/null || true)"
+    else
+      version_line="$(brew list --cask --versions "$entry_name" 2>/dev/null || true)"
+    fi
+
+    if [[ -n "$version_line" ]]; then
+      printf '%s|%s|installed|%s\n' "$entry_type" "$entry_name" "$version_line" >> "$output_file"
+    else
+      printf '%s|%s|missing|\n' "$entry_type" "$entry_name" >> "$output_file"
+    fi
+  done < "$ENTRIES_FILE"
+}
+
+write_brewfile_entries() {
+  local brewfile_path="$1"
+
+  "$PYTHON3_COMMAND" - "$brewfile_path" <<'PY' > "$ENTRIES_FILE"
+import pathlib
+import re
+import sys
+
+brewfile = pathlib.Path(sys.argv[1]).read_text().splitlines()
+pattern = re.compile(r'^(brew|cask)\s+"([^"]+)"')
+
+for line in brewfile:
+    match = pattern.match(line.strip())
+    if match:
+        print(f"{match.group(1)}|{match.group(2)}")
+PY
+}
+
+process_brewfile() {
+  local brewfile_path="$1"
+
+  echo "==> Checking Brewfile: $brewfile_path"
+  [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
+
+  write_brewfile_entries "$brewfile_path"
+  snapshot_brewfile_state "$BEFORE_FILE"
+
+  echo "==> Checking Brewfile state"
+  if brew bundle check --file="$brewfile_path"; then
+    echo "Brewfile already satisfied: $brewfile_path"
+    return 0
+  fi
+
+  echo "==> Applying Brewfile: $brewfile_path"
+  brew bundle install --file="$brewfile_path"
+
+  snapshot_brewfile_state "$AFTER_FILE"
+  "$PYTHON3_COMMAND" - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
+from pathlib import Path
+import sys
+
+def read_state(path):
+    rows = {}
+    for line in Path(path).read_text().splitlines():
+        entry_type, name, state, version = line.split("|", 3)
+        rows[(entry_type, name)] = {"state": state, "version": version}
+    return rows
+
+before = read_state(sys.argv[1])
+after = read_state(sys.argv[2])
+
+for (entry_type, name), after_data in after.items():
+    before_data = before[(entry_type, name)]
+    if before_data["state"] == "missing" and after_data["state"] == "installed":
+        print(f"{entry_type}|{name}|Installed")
+    elif before_data["state"] == "installed" and after_data["state"] == "installed" and before_data["version"] != after_data["version"]:
+        print(f"{entry_type}|{name}|Upgraded")
+PY
+
+  while IFS='|' read -r entry_type entry_name change_name; do
+    [[ -n "$entry_name" ]] || continue
+    log_change "Installation" "$entry_name" "$change_name" "$BREW_PREFIX" "Managed by Brewfile"
+  done < "$CHANGES_FILE"
+}
 
 require_macos
 initialize_change_log "scripts/macos/brew-install"
-
-BREW_ROOT=""
+require_command git
+require_clean_pushed_repo_state "$ROOT" "brew-install"
 
 echo "==> Checking Xcode Command Line Tools"
 if ! xcode-select -p >/dev/null 2>&1; then
@@ -25,10 +130,33 @@ fi
 echo "==> Loading Homebrew into PATH if already installed"
 load_homebrew_shellenv
 
-if command -v brew >/dev/null 2>&1; then
-  echo "==> Homebrew already installed"
-  brew --version
-  exit 0
+if ! command -v brew >/dev/null 2>&1; then
+  fail "Homebrew is not installed. This repository does not execute the upstream Homebrew installer automatically because the published install path is a moving script without an official SHA-256 verification artefact for this workflow. Install Homebrew manually, then re-run this script."
 fi
 
-fail "Homebrew is not installed. This repository does not execute the upstream Homebrew installer automatically because the published install path is a moving script without an official SHA-256 verification artefact for this workflow. Install Homebrew manually, then re-run this script."
+echo "==> Homebrew already installed"
+brew --version
+
+require_homebrew
+require_clt
+require_command cmp
+PYTHON3_COMMAND="$(preferred_python3_command)"
+
+BREW_PREFIX="$(brew --prefix)"
+ENTRIES_FILE="$(mktemp)"
+BEFORE_FILE="$(mktemp)"
+AFTER_FILE="$(mktemp)"
+CHANGES_FILE="$(mktemp)"
+
+if [[ -n "$BREWFILE_OVERRIDE" ]]; then
+  process_brewfile "$BREWFILE_OVERRIDE"
+else
+  process_brewfile "$(shared_platform_config_path "config/brew" "Brewfile")"
+
+  BREWFILE_OVERRIDE="$(host_platform_config_path "config/brew" "Brewfile")"
+  if [[ -f "$BREWFILE_OVERRIDE" ]]; then
+    process_brewfile "$BREWFILE_OVERRIDE"
+  fi
+fi
+
+echo "==> Homebrew and Brewfile entries are installed"

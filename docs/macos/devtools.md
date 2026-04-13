@@ -4,7 +4,7 @@
 
 This repository manages a shared CLI and terminal-editor baseline in addition to Ghostty, Nushell, Caddy, Podman, and Git/SSH setup.
 
-The managed source config currently includes:
+The managed source config currently includes the shared tool configs below:
 
 - `config/bat/`
 - `config/eza/`
@@ -18,7 +18,7 @@ The managed source config currently includes:
 - `config/micro/`
 - `config/vim/`
 
-`scripts/macos/devtools-configure` deploys those trees into `~/.config`, writes `~/.vimrc` as a bridge to `~/.config/vim/vimrc`, and creates compatibility bridges for the macOS `lazygit` and `zellij` application-support paths.
+`scripts/macos/devtools-configure` deploys those shared config trees into `~/.config`, writes `~/.vimrc` as a bridge to `~/.config/vim/vimrc`, and creates compatibility bridges for the macOS `lazygit` and `zellij` application-support paths.
 
 That means the managed runtime outputs include:
 
@@ -88,12 +88,9 @@ Both are configured with a balanced setup and the same blue dark theme family.
 Run either:
 
 1. `scripts/macos/brew-install`
-2. `scripts/macos/brewfile-install`
-3. `scripts/macos/brew-upgrade`
-4. `scripts/macos/ghostty-configure`
-5. `scripts/macos/jj-configure`
-6. `scripts/macos/nushell-configure`
-7. `scripts/macos/devtools-configure`
+2. `scripts/macos/brew-upgrade`
+3. `scripts/macos/brew-configure`
+4. `scripts/macos/brew-service start`
 
 or run `scripts/macos/bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
 

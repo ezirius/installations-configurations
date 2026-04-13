@@ -36,7 +36,7 @@ grep -q 'brew "yq"' "$BREWFILE"
 grep -q 'brew "zellij"' "$BREWFILE"
 grep -q 'cask "ghostty"' "$BREWFILE"
 grep -q 'brew "zoxide"' "$BREWFILE"
-grep -q '^  process_brewfile "\$(shared_platform_config_path "config/brew" "Brewfile")"$' "$ROOT/scripts/macos/brewfile-install"
+grep -q '^  process_brewfile "\$(shared_platform_config_path "config/brew" "Brewfile")"$' "$ROOT/scripts/macos/brew-install"
 python3 - "$BREWFILE" <<'PY'
 from pathlib import Path
 import sys
