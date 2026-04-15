@@ -23,7 +23,7 @@ You also need `python3` available before running the managed setup scripts becau
 The current managed Caddyfile is:
 
 ```caddy
-127.0.0.1:8123 {
+https://127.0.0.1:8123 {
     reverse_proxy https://hovaryn.mioverso.com:8123
 }
 ```
@@ -42,7 +42,7 @@ This is the persistent Homebrew-backed background mode. It registers `caddy` wit
 
 ## Local HTTPS trust
 
-Because the managed reverse proxy serves local HTTPS on `127.0.0.1:8123`, the local Caddy CA must also be trusted on the machine.
+Because the managed reverse proxy serves local HTTPS on `https://127.0.0.1:8123`, the local Caddy CA must also be trusted on the machine.
 
 This repository manages that through:
 

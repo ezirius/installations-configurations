@@ -37,6 +37,7 @@ render_caddyfile() {
   local output_path="$1"
   shift
 
+  mkdir -p "$(dirname "$output_path")"
   TEMP_FILE="$(mktemp)"
   "$PYTHON3_COMMAND" - "$TEMP_FILE" "$@" <<'PY'
 from pathlib import Path

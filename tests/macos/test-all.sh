@@ -35,6 +35,7 @@ bash -n \
   tests/macos/test-caddy-service-runtime.sh \
   tests/macos/test-caddy-trust.sh \
   tests/macos/test-caddy-trust-runtime.sh \
+  tests/macos/test-help.sh \
   tests/macos/test-common.sh \
   tests/macos/test-docs.sh \
   tests/macos/test-args.sh \
@@ -67,6 +68,7 @@ bash -n \
 "$ROOT/tests/macos/test-caddy-service-runtime.sh"
 "$ROOT/tests/macos/test-caddy-trust.sh"
 "$ROOT/tests/macos/test-caddy-trust-runtime.sh"
+"$ROOT/tests/macos/test-help.sh"
 "$ROOT/tests/macos/test-common.sh"
 "$ROOT/tests/macos/test-docs.sh"
 "$ROOT/tests/macos/test-args.sh"

@@ -51,6 +51,8 @@ Run:
 
 1. `scripts/macos/system-configure`
 
+Run `scripts/macos/system-configure --help` to review the managed command usage without applying changes.
+
 The current `scripts/macos/brew-bootstrap` flow does not run `scripts/macos/system-configure` automatically.
 
 ## Verification

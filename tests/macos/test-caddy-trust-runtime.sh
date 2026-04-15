@@ -113,8 +113,42 @@ import sys
 print(Path(sys.argv[1]).read_text().count('trust --config'))
 PY
 )
-if [[ "$COUNT_BEFORE" != "$COUNT_AFTER" ]]; then
-  printf 'assertion failed: caddy-trust should not call caddy trust again when already trusted\n' >&2
+if [[ "$COUNT_AFTER" -le "$COUNT_BEFORE" ]]; then
+  printf 'assertion failed: caddy-trust should re-run caddy trust to avoid stale certificate-name false positives\n' >&2
+  exit 1
+fi
+
+STALE_DIR="$TMPDIR/stale-name"
+mkdir -p "$STALE_DIR/bin" "$STALE_DIR/state" "$STALE_DIR/home/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$STALE_DIR/home/Library/Keychains" "$STALE_DIR/homebrew/etc"
+cp "$ROOT/config/caddy/shared-macos.Caddyfile" "$STALE_DIR/homebrew/etc/Caddyfile"
+cp "$MOCK_BIN/uname" "$STALE_DIR/bin/uname"
+cp "$MOCK_BIN/scutil" "$STALE_DIR/bin/scutil"
+cp "$MOCK_BIN/xcode-select" "$STALE_DIR/bin/xcode-select"
+cat > "$STALE_DIR/bin/brew" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  shellenv) ;;
+  --prefix) printf '%s\n' "$STALE_DIR/homebrew" ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > "$STALE_DIR/bin/security" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == find-certificate ]]; then
+  exit 0
+fi
+exit 0
+EOF
+cat > "$STALE_DIR/bin/caddy" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == trust ]]; then
+  exit 1
+fi
+exit 0
+EOF
+chmod +x "$STALE_DIR/bin/brew" "$STALE_DIR/bin/security" "$STALE_DIR/bin/caddy"
+if PATH="$STALE_DIR/bin:$PATH" HOME="$STALE_DIR/home" "$SCRIPT_FILE" >"$STALE_DIR/out" 2>"$STALE_DIR/err"; then
+  printf 'assertion failed: caddy-trust should not treat a stale certificate name as sufficient trust state\n' >&2
   exit 1
 fi
 

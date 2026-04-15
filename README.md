@@ -56,7 +56,7 @@ The normal Caddy change workflow is:
 2. Run `scripts/macos/caddy-configure`
 3. Run `scripts/macos/caddy-service reload`
 
-For local HTTPS trust, run `scripts/macos/caddy-trust` after `scripts/macos/caddy-configure` has deployed the managed Caddyfile. In the default workflow this already happens inside `scripts/macos/brew-configure`.
+For local HTTPS trust, run `scripts/macos/caddy-trust` after `scripts/macos/caddy-configure` has deployed the managed Caddyfile for `https://127.0.0.1:8123`. In the default workflow this already happens inside `scripts/macos/brew-configure`.
 
 `scripts/macos/brew-configure` is the post-install umbrella command for the current Brew workflow. It runs the configured wrapper steps from `config/brew/shared-macos.conf`, which currently are:
 
@@ -79,6 +79,8 @@ The repository also ships a standalone macOS system-settings command:
 1. `scripts/macos/system-configure`
 
 It is not part of the current Brew bootstrap path.
+
+Run `scripts/macos/system-configure --help` to inspect the command without applying the managed settings.
 
 See `docs/macos/caddy.md`, `docs/macos/podman.md`, and `docs/macos/system.md` for the focused macOS notes. The machine install step applies the configured Podman machine settings before starting the machine.
 

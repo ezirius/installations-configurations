@@ -52,11 +52,6 @@ TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"
 
 [[ -f "$TARGET_CONFIG" ]] || fail "Managed Caddyfile not found: $TARGET_CONFIG; run scripts/macos/caddy-configure first"
 
-if TRUSTED_KEYCHAIN="$(find_trusted_keychain)"; then
-  echo "==> Caddy local CA is already trusted"
-  exit 0
-fi
-
 echo "==> Trusting the Caddy local CA"
 caddy trust --config "$TARGET_CONFIG" --adapter caddyfile >/dev/null
 

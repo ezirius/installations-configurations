@@ -4,6 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0")
+
+Apply the managed macOS system settings.
+
+Notes:
+  - Loads the shared macOS system config and any matching host-specific override.
+  - Requires sudo for the managed pmset change."
+fi
+
 if [[ $# -ne 0 ]]; then
   usage_error "$(basename "$0") takes no arguments"
 fi

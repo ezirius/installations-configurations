@@ -51,7 +51,7 @@ printf '/Library/Developer/CommandLineTools\n'
 EOF
 cat > "$MOCK_BIN/scutil" <<'EOF'
 #!/usr/bin/env bash
-printf 'Maldoria\n'
+printf 'Maldoria/Mac\n'
 EOF
 
 cat > "$MOCK_BIN/podman" <<'EOF'
@@ -114,6 +114,13 @@ if [[ "$report_count" != "1" ]]; then
 fi
 
 REPORT_FILE=$(find "$REPORT_DIR" -maxdepth 1 -type f -name '*.log' | head -n 1)
+case "$REPORT_FILE" in
+  *'Maldoria-Mac Podman Diagnose-'*) ;;
+  *)
+    printf 'assertion failed: diagnose mode should name the report with safe_log_host_name\nfile: %s\n' "$REPORT_FILE" >&2
+    exit 1
+    ;;
+esac
 assert_contains "$STATE_DIR/out" '## Podman Diagnose' 'diagnose mode prints a formatted report header'
 assert_contains "$REPORT_FILE" '## Podman Diagnose' 'diagnose mode saves a formatted report header'
 assert_contains "$REPORT_FILE" '## Summary' 'diagnose report includes a deterministic summary section'

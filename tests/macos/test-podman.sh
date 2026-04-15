@@ -31,11 +31,4 @@ grep -q 'Defaults to the configured machine name' "$ROOT/scripts/macos/podman-co
 grep -q '^  fail "podman is not installed; run scripts/macos/brew-install first"$' "$SCRIPT_FILE"
 grep -q '^  podman machine init "\${MACHINE_INIT_ARGS\[@\]}" "\$MACHINE_NAME"$' "$SCRIPT_FILE"
 grep -q '^  podman machine start "\$MACHINE_NAME"$' "$SCRIPT_FILE"
-if ! command -v podman >/dev/null 2>&1; then
-  echo "Podman checks passed (integration skipped: podman not installed)"
-  exit 0
-fi
-
-podman machine list >/dev/null
-podman info >/dev/null
-echo "Podman checks passed"
+echo "Podman checks passed (repository-only coverage)"

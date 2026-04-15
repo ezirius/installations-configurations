@@ -51,7 +51,7 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
 
 TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"
-assert_contains "$TARGET_CONFIG" '127.0.0.1:8123 {' 'shared Caddy fragment is deployed'
+assert_contains "$TARGET_CONFIG" 'https://127.0.0.1:8123 {' 'shared Caddy HTTPS fragment is deployed'
 assert_contains "$TARGET_CONFIG" 'reverse_proxy https://hovaryn.mioverso.com:8123' 'managed Caddy reverse proxy is deployed'
 assert_contains "$STATE_DIR/caddy.log" 'validate --config' 'managed shared Caddyfile is validated before deployment'
 
@@ -90,5 +90,26 @@ if [[ "$(cat "$TARGET_CONFIG")" != "$PREV_CONTENT" ]]; then
   printf 'assertion failed: validation failure should not rewrite the deployed Caddyfile\n' >&2
   exit 1
 fi
+
+FRESH_PREFIX="$TMPDIR/fresh-prefix"
+mkdir -p "$FRESH_PREFIX"
+cat > "$MOCK_BIN/brew" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  shellenv) ;;
+  --prefix) printf '%s\n' "$FRESH_PREFIX" ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > "$MOCK_BIN/caddy" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == validate ]]; then
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/brew" "$MOCK_BIN/caddy"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
+assert_contains "$FRESH_PREFIX/etc/Caddyfile" 'https://127.0.0.1:8123 {' 'first-run custom prefix without pre-created etc still deploys the managed Caddyfile'
 
 echo "Caddy runtime checks passed"

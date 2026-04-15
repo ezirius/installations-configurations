@@ -106,7 +106,7 @@ run_diagnose() {
   output_dir="$(resolve_diagnose_output_dir)"
   timestamp="$(current_date)-$(current_time)"
   mkdir -p "$output_dir"
-  REPORT_FILE="$output_dir/$(detect_log_host_name) Podman Diagnose-$timestamp.log"
+  REPORT_FILE="$output_dir/$(safe_log_host_name) Podman Diagnose-$timestamp.log"
   : > "$REPORT_FILE"
 
   report_line "## Podman Diagnose"

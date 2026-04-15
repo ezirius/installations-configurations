@@ -148,7 +148,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":false},"cpus":4,"memory":4096}]\n'
+        printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -172,9 +172,46 @@ EOF
 chmod +x "$MOCK_BIN/podman"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
 if grep -Fq -- 'machine start podman-machine-default' "$STATE_DIR/podman.log" || grep -Fq -- 'machine stop podman-machine-default' "$STATE_DIR/podman.log"; then
-  printf 'assertion failed: existing healthy podman machine should not be restarted when settings are unchanged\n' >&2
+  printf 'assertion failed: existing healthy podman machine should not be restarted when unchanged machine matches 8192 memory and 60 disk settings\n' >&2
   exit 1
 fi
+
+STATE_DIR="$TMPDIR/state-running-noop"
+mkdir -p "$STATE_DIR"
+cat > "$MOCK_BIN/podman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="${STATE_DIR:?}"
+printf '%s\n' "$*" >> "$STATE_DIR/podman.log"
+case "$1" in
+  machine)
+    case "$2" in
+      inspect)
+        printf '[{"State":{"Running":true},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
+        ;;
+      set)
+        if [[ "${3:-}" == --help ]]; then
+          printf '%s\n' '--cpus --memory --disk-size --rootful'
+          exit 0
+        fi
+        ;;
+      start|stop)
+        printf 'unexpected lifecycle action\n' >&2
+        exit 1
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  info)
+    printf '{}\n'
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$MOCK_BIN/podman"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
+assert_not_contains "$STATE_DIR/podman.log" 'machine stop podman-machine-default' 'running unchanged machine should not be stopped before applying settings'
+assert_not_contains "$STATE_DIR/podman.log" 'machine start podman-machine-default' 'running unchanged machine should not be restarted after applying settings'
 
 STATE_DIR="$TMPDIR/state-noop-start"
 mkdir -p "$STATE_DIR"
@@ -187,7 +224,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":false},"cpus":4,"memory":4096,"diskSize":60,"rootful":false}]\n'
+        printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -231,9 +268,9 @@ case "$1" in
     case "$2" in
       inspect)
         if [[ -f "$STATE_DIR/second-inspect" ]]; then
-          printf '[{"State":{"Running":false},"cpus":4,"memory":4096,"diskSize":100,"rootful":false,"LastUp":"later"}]\n'
+          printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false,"LastUp":"later"}]\n'
         else
-          printf '[{"State":{"Running":false},"cpus":4,"memory":4096,"diskSize":100,"rootful":false,"LastUp":"earlier"}]\n'
+          printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false,"LastUp":"earlier"}]\n'
           : > "$STATE_DIR/second-inspect"
         fi
         ;;

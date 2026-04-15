@@ -12,11 +12,17 @@ The Podman machine defaults live in:
 
 - `config/podman/containers.conf`
 
+The managed machine name and diagnose defaults live in:
+
+- `config/podman/shared-macos.conf`
+
 `scripts/macos/podman-configure` copies that file into:
 
 - `~/.config/containers/containers.conf`
 
 and then ensures the managed Podman machine exists, applies the configured settings, and starts the machine if needed.
+
+The default managed machine name is controlled by `PODMAN_MACHINE_NAME_DEFAULT`.
 
 The current shared defaults are intentionally conservative baseline values:
 

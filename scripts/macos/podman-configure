@@ -36,6 +36,8 @@ MACHINE_SET_HELP=""
 MACHINE_INIT_ARGS=()
 PYTHON3_COMMAND=""
 MACHINE_WAS_RUNNING="0"
+MACHINE_SETTINGS_BEFORE=""
+MACHINE_SETTINGS_AFTER=""
 
 load_podman_config() {
   source_shell_config "$(shared_platform_config_path "config/podman" "conf")"
@@ -140,6 +142,50 @@ print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
 PY
 }
 
+desired_machine_settings_summary() {
+  "$PYTHON3_COMMAND" - "$MACHINE_CPUS" "$MACHINE_MEMORY" "$MACHINE_DISK_SIZE" "$MACHINE_ROOTFUL" <<'PY'
+import json
+import sys
+
+summary = {
+    "cpus": int(sys.argv[1]),
+    "memory": int(sys.argv[2]),
+    "disk_size": int(sys.argv[3]),
+    "rootful": sys.argv[4].strip().lower() == "true",
+}
+
+print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+PY
+}
+
+machine_settings_summary() {
+  local inspect_json="$1"
+
+  "$PYTHON3_COMMAND" - "$inspect_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+
+if isinstance(data, list):
+    if not data:
+        raise SystemExit(1)
+    data = data[0]
+
+if not isinstance(data, dict):
+    raise SystemExit(1)
+
+summary = {
+    "cpus": data.get("cpus", data.get("CPUs")),
+    "memory": data.get("memory", data.get("Memory")),
+    "disk_size": data.get("disk_size", data.get("diskSize", data.get("DiskSize"))),
+    "rootful": data.get("rootful", data.get("Rootful")),
+}
+
+print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+PY
+}
+
 prepare_machine_for_update() {
   if machine_is_running; then
     echo "==> Stopping running Podman machine before applying mutable settings"
@@ -204,12 +250,16 @@ if ! podman machine inspect "$MACHINE_NAME" >/dev/null 2>&1; then
   log_change "Configuration" "Podman machine" "Created" "$MACHINE_STORAGE_PATH" "Created machine $MACHINE_NAME"
 else
   MACHINE_STATE_BEFORE="$(machine_state_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
-  prepare_machine_for_update
-  apply_machine_preferences
-  restore_machine_after_update
+  MACHINE_SETTINGS_BEFORE="$(machine_settings_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
+  if [[ "$MACHINE_SETTINGS_BEFORE" != "$(desired_machine_settings_summary)" ]]; then
+    prepare_machine_for_update
+    apply_machine_preferences
+    restore_machine_after_update
+  fi
   MACHINE_STATE_AFTER="$(machine_state_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
+  MACHINE_SETTINGS_AFTER="$(machine_settings_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
 
-  if [[ "$MACHINE_STATE_BEFORE" != "$MACHINE_STATE_AFTER" ]]; then
+  if [[ "$MACHINE_SETTINGS_BEFORE" != "$MACHINE_SETTINGS_AFTER" ]]; then
     if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
       MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH"
     fi
