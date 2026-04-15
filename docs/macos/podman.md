@@ -2,6 +2,12 @@
 
 ## Managed config
 
+The shared macOS Brewfile manages the Podman package set for this repository:
+
+- `podman`
+- `podman-compose`
+- `podman-desktop`
+
 The Podman machine defaults live in:
 
 - `config/podman/containers.conf`
@@ -10,12 +16,12 @@ The Podman machine defaults live in:
 
 - `~/.config/containers/containers.conf`
 
-and then ensures the managed Podman machine exists, applies the configured settings where supported, and starts the machine if needed.
+and then ensures the managed Podman machine exists, applies the configured settings, and starts the machine if needed.
 
 The current shared defaults are intentionally conservative baseline values:
 
 - `cpus=4`
-- `memory=4096`
+- `memory=8192`
 - `disk_size=60`
 - `rootful=false`
 
@@ -30,14 +36,38 @@ The current shared defaults are intentionally conservative baseline values:
 5. safely stops and restarts an already-running machine when mutable settings need to change
 6. verifies that `podman info` succeeds at the end
 
-Unsupported `podman machine set` flags are skipped explicitly rather than failing silently.
+If the installed Podman build does not support a required managed machine-setting flag, `scripts/macos/podman-configure` fails clearly instead of silently drifting from the configured defaults.
 
 ## Verification
 
 After running the machine install step, you can run:
 
 1. `scripts/macos/podman-check`
+2. `scripts/macos/podman-check diagnose`
 
-That prints Podman status information and runs a small test container.
+`scripts/macos/podman-check` prints Podman status information and runs a small test container.
+
+`scripts/macos/podman-check diagnose` prints a formatted diagnostic report to the terminal and saves a timestamped copy under `logs/podman/`. The diagnostic mode captures a point-in-time snapshot including Podman version info, machine state, containers, images, storage usage, recent events, machine SSH diagnostics, and the verification container run.
+
+The diagnose mode is config-driven. The current defaults live in `config/podman/shared-macos.conf`:
+
+- `PODMAN_DIAGNOSE_OUTPUT_DIR`
+- `PODMAN_DIAGNOSE_EVENT_WINDOWS`
+- `PODMAN_DIAGNOSE_HOST_COMMANDS`
+- `PODMAN_DIAGNOSE_MACHINE_COMMANDS`
+
+`PODMAN_DIAGNOSE_OUTPUT_DIR` may be either:
+
+- a relative path, resolved from the repository root
+- or an absolute path
+
+The current default writes timestamped reports under `logs/podman/`.
+
+The normal managed setup order is:
+
+1. `scripts/macos/brew-install`
+2. `scripts/macos/brew-upgrade`
+3. `scripts/macos/brew-configure`
+4. `scripts/macos/brew-service start`
 
 Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.

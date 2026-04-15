@@ -8,11 +8,13 @@ STATE_DIR="$TMPDIR/state"
 MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
-mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$STATE_DIR" "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
+mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman" "$STATE_DIR" "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cp "$ROOT/scripts/macos/brew-install" "$REPO_DIR/scripts/macos/brew-install"
 cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
+cp "$ROOT/config/repo/shared.conf" "$REPO_DIR/config/repo/shared.conf"
+cp "$ROOT/config/podman/shared-macos.conf" "$REPO_DIR/config/podman/shared-macos.conf"
 chmod +x "$REPO_DIR/scripts/macos/brew-install"
 
 cat > "$REPO_DIR/config/brew/shared-macos.Brewfile" <<'EOF'

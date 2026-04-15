@@ -4,21 +4,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0")
+
+Trust the local Caddy CA used by the managed HTTPS reverse proxy.
+
+Notes:
+  - Safe to rerun.
+  - Requires the managed Caddyfile to already be deployed."
+fi
+
 if [[ $# -ne 0 ]]; then
   usage_error "$(basename "$0") takes no arguments"
 fi
 
 BREW_PREFIX=""
 TARGET_CONFIG=""
+TRUSTED_KEYCHAIN=""
+
+load_caddy_config() {
+  source_shell_config "$(shared_platform_config_path "config/caddy" "conf")"
+}
 
 find_trusted_keychain() {
   local keychain
 
-  for keychain in \
-    "/Library/Keychains/System.keychain" \
-    "$HOME/Library/Keychains/login.keychain-db"
-  do
-    if security find-certificate -c "Caddy Local Authority" "$keychain" >/dev/null 2>&1; then
+  for keychain in "${CADDY_TRUST_KEYCHAINS[@]}"; do
+    if security find-certificate -c "$CADDY_TRUST_CERT_NAME" "$keychain" >/dev/null 2>&1; then
       printf '%s\n' "$keychain"
       return 0
     fi
@@ -33,9 +45,10 @@ require_clt
 require_command caddy "Run scripts/macos/brew-install before trusting the Caddy local CA"
 require_command security
 initialize_change_log "scripts/macos/caddy-trust"
+load_caddy_config
 
 BREW_PREFIX="$(brew --prefix)"
-TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"
+TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"
 
 [[ -f "$TARGET_CONFIG" ]] || fail "Managed Caddyfile not found: $TARGET_CONFIG; run scripts/macos/caddy-configure first"
 

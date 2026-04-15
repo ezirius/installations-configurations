@@ -4,16 +4,42 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+load_brew_workflow_config() {
+  source_shell_config "$(shared_platform_config_path "config/brew" "conf")"
+}
+
+format_brew_array_lines() {
+  local line_prefix="$1"
+  shift
+  local item
+
+  for item in "$@"; do
+    printf '%s%s\n' "$line_prefix" "$item"
+  done
+}
+
+if is_help_flag "${1-}"; then
+  load_brew_workflow_config
+  show_help "Usage: $(basename "$0")
+
+Run the full managed macOS Brew workflow defined in config.
+
+Configured bootstrap steps:
+$(format_brew_array_lines '  - ' "${BREW_BOOTSTRAP_STEPS[@]}")
+  - brew-service $BREW_BOOTSTRAP_SERVICE_ACTION"
+fi
+
 if [[ $# -ne 0 ]]; then
   usage_error "$(basename "$0") takes no arguments"
 fi
 
 require_macos
+load_brew_workflow_config
 
 echo "==> Running macOS brew bootstrap"
-"$SCRIPT_DIR/brew-install"
-"$SCRIPT_DIR/brew-upgrade"
-"$SCRIPT_DIR/brew-configure"
-"$SCRIPT_DIR/brew-service" start
+for step in "${BREW_BOOTSTRAP_STEPS[@]}"; do
+  "$SCRIPT_DIR/$step"
+done
+"$SCRIPT_DIR/brew-service" "$BREW_BOOTSTRAP_SERVICE_ACTION"
 
 echo "==> macOS brew bootstrap is complete"

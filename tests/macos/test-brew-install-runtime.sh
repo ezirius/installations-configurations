@@ -7,12 +7,16 @@ REPO_DIR="$TMPDIR/repo"
 MOCK_BIN="$TMPDIR/bin"
 NO_BREW_BIN="$TMPDIR/no-brew-bin"
 SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-install"
-mkdir -p "$MOCK_BIN" "$NO_BREW_BIN" "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew"
+HELPERS="$ROOT/lib/test/runtime-helpers.sh"
+mkdir -p "$MOCK_BIN" "$NO_BREW_BIN" "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman"
 trap 'rm -rf "$TMPDIR"' EXIT
+source "$HELPERS"
 
 cp "$ROOT/scripts/macos/brew-install" "$REPO_DIR/scripts/macos/brew-install"
 cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
 cp "$ROOT/config/brew/shared-macos.Brewfile" "$REPO_DIR/config/brew/shared-macos.Brewfile"
+cp "$ROOT/config/repo/shared.conf" "$REPO_DIR/config/repo/shared.conf"
+cp "$ROOT/config/podman/shared-macos.conf" "$REPO_DIR/config/podman/shared-macos.conf"
 chmod +x "$SCRIPT_FILE"
 
 git -C "$REPO_DIR" init -b main >/dev/null
@@ -23,14 +27,6 @@ git -C "$REPO_DIR" commit -m 'Initial' >/dev/null
 git -C "$REPO_DIR" init --bare "$TMPDIR/remote.git" >/dev/null
 git -C "$REPO_DIR" remote add origin "$TMPDIR/remote.git"
 git -C "$REPO_DIR" push -u origin main >/dev/null 2>&1
-
-assert_contains() {
-  local file="$1" needle="$2" message="$3"
-  if ! grep -Fq -- "$needle" "$file"; then
-    printf 'assertion failed: %s\nmissing: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
-    exit 1
-  fi
-}
 
 cat > "$MOCK_BIN/uname" <<'EOF'
 #!/usr/bin/env bash

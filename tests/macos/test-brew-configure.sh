@@ -3,27 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT_FILE="$ROOT/scripts/macos/brew-configure"
+CONFIG_FILE="$ROOT/config/brew/shared-macos.conf"
 
 test -f "$SCRIPT_FILE"
+test -f "$CONFIG_FILE"
 grep -q '^require_macos$' "$SCRIPT_FILE"
-python3 - "$SCRIPT_FILE" <<'PY'
-from pathlib import Path
-import sys
-
-lines = Path(sys.argv[1]).read_text().splitlines()
-expected = [
-    '"$SCRIPT_DIR/caddy-configure"',
-    '"$SCRIPT_DIR/caddy-trust"',
-    '"$SCRIPT_DIR/ghostty-configure"',
-    '"$SCRIPT_DIR/jj-configure"',
-    '"$SCRIPT_DIR/nushell-configure"',
-    '"$SCRIPT_DIR/devtools-configure"',
-    '"$SCRIPT_DIR/system-configure"',
-    '"$SCRIPT_DIR/podman-configure"',
-]
-
-positions = [lines.index(item) for item in expected]
-assert positions == sorted(positions)
-PY
+grep -q '^BREW_CONFIGURE_STEPS=($' "$CONFIG_FILE"
+grep -q '^  "caddy-configure"$' "$CONFIG_FILE"
+grep -q '^  "caddy-trust"$' "$CONFIG_FILE"
+grep -q '^  "podman-configure"$' "$CONFIG_FILE"
+grep -q 'BREW_CONFIGURE_STEPS' "$SCRIPT_FILE"
 
 echo "Brew configure checks passed"

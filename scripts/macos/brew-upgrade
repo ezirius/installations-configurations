@@ -4,6 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0") [brewfile-path]
+
+Upgrade already installed managed Homebrew formulae and casks.
+
+Arguments:
+  [brewfile-path]  Optional explicit Brewfile override.
+
+Notes:
+  - Requires a clean, pushed repository state.
+  - Does not install missing entries.
+  - Runs brew update before checking outdated managed entries."
+fi
+
 if [[ $# -gt 1 ]]; then
   usage_error "$(basename "$0") takes at most 1 argument: [brewfile-path]"
 fi
@@ -63,24 +77,6 @@ entry_is_outdated() {
   [[ -n "$outdated_output" ]]
 }
 
-write_brewfile_entries() {
-  local brewfile_path="$1"
-
-  "$PYTHON3_COMMAND" - "$brewfile_path" <<'PY' > "$ENTRIES_FILE"
-import pathlib
-import re
-import sys
-
-brewfile = pathlib.Path(sys.argv[1]).read_text().splitlines()
-pattern = re.compile(r'^(brew|cask)\s+"([^"]+)"')
-
-for line in brewfile:
-    match = pattern.match(line.strip())
-    if match:
-        print(f"{match.group(1)}|{match.group(2)}")
-PY
-}
-
 upgrade_brewfile_entries() {
   local brewfile_path="$1"
   local entry_type
@@ -89,7 +85,7 @@ upgrade_brewfile_entries() {
   echo "==> Checking Brewfile: $brewfile_path"
   [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
 
-  write_brewfile_entries "$brewfile_path"
+  parse_brewfile_entries "$brewfile_path" > "$ENTRIES_FILE"
   snapshot_brewfile_state "$BEFORE_FILE"
 
   echo "==> Upgrading installed outdated Brewfile entries: $brewfile_path"

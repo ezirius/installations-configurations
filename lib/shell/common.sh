@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALLATIONS_CONFIGURATIONS_LOG_DIR_DEFAULT="$HOME/Documents/Ezirius/Systems/Installations and Configurations/Computers"
+INSTALLATIONS_CONFIGURATIONS_CONFIG_LOADED_REPO="0"
 
-INSTALLATIONS_CONFIGURATIONS_LOG_FILE=""
-INSTALLATIONS_CONFIGURATIONS_LOG_SCRIPT=""
+source_shell_config() {
+  local config_path="$1"
+  [[ -f "$config_path" ]] || fail "Config file not found: $config_path"
+  # shellcheck disable=SC1090
+  source "$config_path"
+}
+
+load_repo_config() {
+  if [[ "$INSTALLATIONS_CONFIGURATIONS_CONFIG_LOADED_REPO" == "1" ]]; then
+    return 0
+  fi
+
+  source_shell_config "$(repo_root)/config/repo/shared.conf"
+  INSTALLATIONS_CONFIGURATIONS_CONFIG_LOADED_REPO="1"
+}
 
 repo_root() {
   local script_dir
@@ -13,12 +26,13 @@ repo_root() {
 }
 
 platform_key() {
+  load_repo_config
   case "$(uname -s)" in
     Darwin)
-      printf '%s\n' 'macos'
+      printf '%s\n' "$REPO_PLATFORM_DARWIN"
       ;;
     Linux)
-      printf '%s\n' 'linux'
+      printf '%s\n' "$REPO_PLATFORM_LINUX"
       ;;
     *)
       fail "Unsupported platform: $(uname -s)"
@@ -26,7 +40,7 @@ platform_key() {
   esac
 }
 
-normalized_host_name() {
+raw_host_name() {
   local host_name
 
   if command -v scutil >/dev/null 2>&1 && scutil --get ComputerName >/dev/null 2>&1; then
@@ -35,8 +49,11 @@ normalized_host_name() {
     host_name="$(hostname -s)"
   fi
 
-  host_name="${host_name%%.*}"
-  normalize_name "$host_name"
+  printf '%s\n' "${host_name%%.*}"
+}
+
+normalized_host_name() {
+  normalize_name "$(raw_host_name)"
 }
 
 normalize_name() {
@@ -48,25 +65,22 @@ normalize_name() {
 shared_platform_config_path() {
   local relative_dir="$1"
   local extension="$2"
-  printf '%s/%s/shared-%s.%s\n' "$(repo_root)" "$relative_dir" "$(platform_key)" "$extension"
+  load_repo_config
+  printf "$REPO_SHARED_PLATFORM_PATTERN\n" "$(repo_root)" "$relative_dir" "$(platform_key)" "$extension"
+}
+
+shared_cross_platform_config_path() {
+  local relative_dir="$1"
+  local extension="$2"
+  load_repo_config
+  printf "$REPO_SHARED_SHARED_PATTERN\n" "$(repo_root)" "$relative_dir" "$extension"
 }
 
 host_platform_config_path() {
   local relative_dir="$1"
   local extension="$2"
-  printf '%s/%s/%s-%s.%s\n' "$(repo_root)" "$relative_dir" "$(normalized_host_name)" "$(platform_key)" "$extension"
-}
-
-shared_host_config_path() {
-  local relative_dir="$1"
-  local extension="$2"
-  printf '%s/%s/shared.%s\n' "$(repo_root)" "$relative_dir" "$extension"
-}
-
-host_config_path() {
-  local relative_dir="$1"
-  local extension="$2"
-  printf '%s/%s/%s.%s\n' "$(repo_root)" "$relative_dir" "$(normalized_host_name)" "$extension"
+  load_repo_config
+  printf "$REPO_HOST_PLATFORM_PATTERN\n" "$(repo_root)" "$relative_dir" "$(normalized_host_name)" "$(platform_key)" "$extension"
 }
 
 preferred_python3_command() {
@@ -87,6 +101,26 @@ preferred_python3_command() {
   fi
 
   fail "python3 is required but was not found. Install Python 3 or ensure Homebrew Python is available."
+}
+
+parse_brewfile_entries() {
+  local brewfile_path="$1"
+  local python3_command
+
+  python3_command="$(preferred_python3_command)"
+  "$python3_command" - "$brewfile_path" <<'PY'
+import pathlib
+import re
+import sys
+
+brewfile = pathlib.Path(sys.argv[1]).read_text().splitlines()
+pattern = re.compile(r'^(brew|cask)\s+"([^"]+)"')
+
+for line in brewfile:
+    match = pattern.match(line.strip())
+    if match:
+        print(f"{match.group(1)}|{match.group(2)}")
+PY
 }
 
 canonicalize_path() {
@@ -114,6 +148,7 @@ require_clean_pushed_repo_state() {
   local command_name="$2"
   local upstream_ref
   local ahead_count
+  local behind_count
 
   require_git_repo_path "$repo_path"
 
@@ -124,40 +159,40 @@ require_clean_pushed_repo_state() {
   upstream_ref="$(git -C "$repo_path" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
   [[ -n "$upstream_ref" ]] || fail "Current branch has no upstream. Push the branch before running $command_name."
 
-  ahead_count="$(git -C "$repo_path" rev-list --count "$upstream_ref..HEAD" 2>/dev/null || printf '0')"
+  IFS=$' \t' read -r behind_count ahead_count < <(git -C "$repo_path" rev-list --left-right --count "$upstream_ref...HEAD" 2>/dev/null || printf '0 0')
+  if [[ "$behind_count" != "0" ]]; then
+    fail "Current branch is behind or diverged from upstream. Pull or reconcile before running $command_name."
+  fi
   if [[ "$ahead_count" != "0" ]]; then
     fail "Current branch has unpushed commits. Push before running $command_name."
   fi
 }
 
 load_homebrew_shellenv() {
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -x /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
+  load_repo_config
+  if [[ -x "$REPO_HOMEBREW_PRIMARY_PREFIX/bin/brew" ]]; then
+    eval "$("$REPO_HOMEBREW_PRIMARY_PREFIX/bin/brew" shellenv)"
+  elif [[ -x "$REPO_HOMEBREW_SECONDARY_PREFIX/bin/brew" ]]; then
+    eval "$("$REPO_HOMEBREW_SECONDARY_PREFIX/bin/brew" shellenv)"
   fi
 }
 
 require_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "This script is for macOS only"
-    exit 1
+    fail "This script is for macOS only"
   fi
 }
 
 require_clt() {
   if ! xcode-select -p >/dev/null 2>&1; then
-    echo "Xcode Command Line Tools are missing"
-    echo "Run: xcode-select --install"
-    exit 1
+    fail "Xcode Command Line Tools are missing. Run: xcode-select --install"
   fi
 }
 
 require_homebrew() {
   load_homebrew_shellenv
   if ! command -v brew >/dev/null 2>&1; then
-    echo "Homebrew is not installed"
-    exit 1
+    fail "Homebrew is not installed"
   fi
 }
 
@@ -171,6 +206,15 @@ usage_error() {
   exit 1
 }
 
+is_help_flag() {
+  [[ "${1-}" == "-h" || "${1-}" == "--help" ]]
+}
+
+show_help() {
+  printf '%s\n' "$1"
+  exit 0
+}
+
 current_date() {
   date '+%Y%m%d'
 }
@@ -181,28 +225,28 @@ current_time() {
 
 homebrew_root_path() {
   load_homebrew_shellenv
+  load_repo_config
 
   if command -v brew >/dev/null 2>&1; then
     brew --prefix
-  elif [[ -d /opt/homebrew ]]; then
-    printf '%s\n' '/opt/homebrew'
-  elif [[ -d /usr/local ]]; then
-    printf '%s\n' '/usr/local'
+  elif [[ -d "$REPO_HOMEBREW_PRIMARY_PREFIX" ]]; then
+    printf '%s\n' "$REPO_HOMEBREW_PRIMARY_PREFIX"
+  elif [[ -d "$REPO_HOMEBREW_SECONDARY_PREFIX" ]]; then
+    printf '%s\n' "$REPO_HOMEBREW_SECONDARY_PREFIX"
   else
-    printf '%s\n' '/opt/homebrew'
+    printf '%s\n' "$REPO_HOMEBREW_PRIMARY_PREFIX"
   fi
 }
 
 detect_log_host_name() {
+  printf '%s' "$(raw_host_name)"
+}
+
+safe_log_host_name() {
   local host_name
-
-  if command -v scutil >/dev/null 2>&1 && scutil --get ComputerName >/dev/null 2>&1; then
-    host_name="$(scutil --get ComputerName)"
-  else
-    host_name="$(hostname -s)"
-  fi
-
-  printf '%s' "${host_name%%.*}"
+  host_name="$(detect_log_host_name)"
+  host_name="${host_name//\//-}"
+  printf '%s' "$host_name"
 }
 
 file_mtime() {
@@ -226,73 +270,11 @@ csv_escape() {
 }
 
 initialize_change_log() {
-  local script_name="$1"
-  local log_dir="${INSTALLATIONS_CONFIGURATIONS_LOG_DIR:-$INSTALLATIONS_CONFIGURATIONS_LOG_DIR_DEFAULT}"
-  local host_name
-  local open_log_file=""
-  local current_log_file
-  local candidate
-  local candidate_mtime
-  local newest_mtime=""
-
-  shopt -s nullglob
-
-  INSTALLATIONS_CONFIGURATIONS_LOG_SCRIPT="$script_name"
-  host_name="$(detect_log_host_name)"
-
-  mkdir -p "$log_dir"
-
-  for candidate in "$log_dir"/"$host_name Installations and Configurations-"*.csv; do
-    [[ "$candidate" == *"---------.csv" ]] || continue
-    candidate_mtime="$(file_mtime "$candidate")"
-
-    if [[ -z "$newest_mtime" || "$candidate_mtime" -gt "$newest_mtime" ]]; then
-      newest_mtime="$candidate_mtime"
-      open_log_file="$candidate"
-    fi
-  done
-
-  shopt -u nullglob
-
-  if [[ -n "$open_log_file" ]]; then
-    INSTALLATIONS_CONFIGURATIONS_LOG_FILE="$open_log_file"
-    return
-  fi
-
-  current_log_file="$log_dir/$host_name Installations and Configurations-$(current_date)---------.csv"
-  INSTALLATIONS_CONFIGURATIONS_LOG_FILE="$current_log_file"
-
-  if [[ ! -f "$INSTALLATIONS_CONFIGURATIONS_LOG_FILE" ]]; then
-    printf '%s\n' 'Date,Time,Username,Type,Script,Item,Change,Path,Details' > "$INSTALLATIONS_CONFIGURATIONS_LOG_FILE"
-  fi
+  :
 }
 
 log_change() {
-  local change_type="$1"
-  local item="$2"
-  local change_name="$3"
-  local path_value="$4"
-  local details="$5"
-  local username="${USER:-$(id -un 2>/dev/null || printf 'unknown')}"
-  local log_date
-  local log_time
-
-  [[ -n "$INSTALLATIONS_CONFIGURATIONS_LOG_FILE" ]] || fail "Change log not initialized"
-
-  log_date="$(current_date)"
-  log_time="$(current_time)"
-
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-    "$(csv_escape "$log_date")" \
-    "$(csv_escape "$log_time")" \
-    "$(csv_escape "$username")" \
-    "$(csv_escape "$change_type")" \
-    "$(csv_escape "$INSTALLATIONS_CONFIGURATIONS_LOG_SCRIPT")" \
-    "$(csv_escape "$item")" \
-    "$(csv_escape "$change_name")" \
-    "$(csv_escape "$path_value")" \
-    "$(csv_escape "$details")" \
-    >> "$INSTALLATIONS_CONFIGURATIONS_LOG_FILE"
+  :
 }
 
 require_command() {
@@ -300,9 +282,9 @@ require_command() {
   local install_hint="${2:-}"
 
   if ! command -v "$command_name" >/dev/null 2>&1; then
-    echo "Required command is missing: $command_name" >&2
+    printf 'Required command is missing: %s\n' "$command_name" >&2
     if [[ -n "$install_hint" ]]; then
-      echo "$install_hint" >&2
+      printf '%s\n' "$install_hint" >&2
     fi
     exit 1
   fi
@@ -323,7 +305,7 @@ import sys
 config_path = pathlib.Path(sys.argv[1])
 key = sys.argv[2]
 
-parser = configparser.ConfigParser()
+parser = configparser.ConfigParser(interpolation=None)
 parser.read(config_path)
 
 if not parser.has_section("machine") or not parser.has_option("machine", key):

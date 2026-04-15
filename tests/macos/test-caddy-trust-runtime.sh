@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT_FILE="$ROOT/scripts/macos/caddy-trust"
+HELPERS="$ROOT/lib/test/runtime-helpers.sh"
 TMPDIR="$(mktemp -d)"
 MOCK_BIN="$TMPDIR/bin"
 STATE_DIR="$TMPDIR/state"
@@ -10,16 +11,9 @@ HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
 mkdir -p "$MOCK_BIN" "$STATE_DIR" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$HOME_DIR/Library/Keychains" "$BREW_PREFIX/etc"
 trap 'rm -rf "$TMPDIR"' EXIT
+source "$HELPERS"
 
-assert_contains() {
-  local file="$1" needle="$2" message="$3"
-  if ! grep -Fq -- "$needle" "$file"; then
-    printf 'assertion failed: %s\nmissing: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
-    exit 1
-  fi
-}
-
-cp "$ROOT/config/caddy/shared.Caddyfile" "$BREW_PREFIX/etc/Caddyfile"
+cp "$ROOT/config/caddy/shared-macos.Caddyfile" "$BREW_PREFIX/etc/Caddyfile"
 
 cat > "$MOCK_BIN/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -68,11 +62,43 @@ exit 0
 EOF
 chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BIN/brew" "$MOCK_BIN/security" "$MOCK_BIN/caddy"
 
+FAIL_DIR="$TMPDIR/fail-trust"
+mkdir -p "$FAIL_DIR/bin" "$FAIL_DIR/state" "$FAIL_DIR/home/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$FAIL_DIR/home/Library/Keychains" "$FAIL_DIR/homebrew/etc"
+cp "$ROOT/config/caddy/shared-macos.Caddyfile" "$FAIL_DIR/homebrew/etc/Caddyfile"
+cp "$MOCK_BIN/uname" "$FAIL_DIR/bin/uname"
+cp "$MOCK_BIN/scutil" "$FAIL_DIR/bin/scutil"
+cp "$MOCK_BIN/xcode-select" "$FAIL_DIR/bin/xcode-select"
+cat > "$FAIL_DIR/bin/brew" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  shellenv) ;;
+  --prefix) printf '%s\n' "$FAIL_DIR/homebrew" ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > "$FAIL_DIR/bin/security" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == find-certificate ]]; then
+  exit 1
+fi
+exit 0
+EOF
+cat > "$FAIL_DIR/bin/caddy" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == trust ]]; then
+  exit 1
+fi
+exit 0
+EOF
+chmod +x "$FAIL_DIR/bin/brew" "$FAIL_DIR/bin/security" "$FAIL_DIR/bin/caddy"
+if PATH="$FAIL_DIR/bin:$PATH" HOME="$FAIL_DIR/home" "$SCRIPT_FILE" >"$FAIL_DIR/out" 2>"$FAIL_DIR/err"; then
+  printf 'assertion failed: caddy-trust should fail when caddy trust itself fails\n' >&2
+  exit 1
+fi
+
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" >/dev/null
 
 assert_contains "$STATE_DIR/caddy.log" 'trust --config' 'caddy trust uses the managed Caddyfile path'
-LOG_FILE="$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers/Maldoria Installations and Configurations-$(date '+%Y%m%d')---------.csv"
-assert_contains "$LOG_FILE" 'Caddy local CA' 'caddy trust is logged when trust is added'
 
 COUNT_BEFORE=$(python3 - "$STATE_DIR/caddy.log" <<'PY'
 from pathlib import Path
@@ -94,7 +120,7 @@ fi
 
 BROKEN_DIR="$TMPDIR/broken"
 mkdir -p "$BROKEN_DIR/bin" "$BROKEN_DIR/state" "$BROKEN_DIR/home/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BROKEN_DIR/home/Library/Keychains" "$BROKEN_DIR/homebrew/etc"
-cp "$ROOT/config/caddy/shared.Caddyfile" "$BROKEN_DIR/homebrew/etc/Caddyfile"
+cp "$ROOT/config/caddy/shared-macos.Caddyfile" "$BROKEN_DIR/homebrew/etc/Caddyfile"
 cp "$MOCK_BIN/uname" "$BROKEN_DIR/bin/uname"
 cp "$MOCK_BIN/scutil" "$BROKEN_DIR/bin/scutil"
 cp "$MOCK_BIN/xcode-select" "$BROKEN_DIR/bin/xcode-select"

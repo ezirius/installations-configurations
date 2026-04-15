@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMPDIR="$(mktemp -d)"
 REPO_DIR="$TMPDIR/repo"
-mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$TMPDIR/state"
+mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/repo" "$REPO_DIR/config/brew" "$TMPDIR/state"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cp "$ROOT/scripts/macos/brew-bootstrap" "$REPO_DIR/scripts/macos/brew-bootstrap"
 cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
+cp "$ROOT/config/repo/shared.conf" "$REPO_DIR/config/repo/shared.conf"
+cp "$ROOT/config/brew/shared-macos.conf" "$REPO_DIR/config/brew/shared-macos.conf"
 
 cat > "$REPO_DIR/scripts/macos/brew-install" <<'EOF'
 #!/usr/bin/env bash

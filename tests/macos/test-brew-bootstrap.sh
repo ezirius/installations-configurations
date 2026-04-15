@@ -2,25 +2,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT_FILE="$ROOT/scripts/macos/brew-bootstrap"
+CONFIG_FILE="$ROOT/config/brew/shared-macos.conf"
 test -f "$SCRIPT_FILE"
+test -f "$CONFIG_FILE"
 grep -q '^source "\$SCRIPT_DIR/../../lib/shell/common.sh"$' "$SCRIPT_FILE"
 grep -q '^require_macos$' "$SCRIPT_FILE"
-python3 - "$SCRIPT_FILE" <<'PY'
-from pathlib import Path
-import sys
-
-lines = Path(sys.argv[1]).read_text().splitlines()
-expected = [
-    '"$SCRIPT_DIR/brew-install"',
-    '"$SCRIPT_DIR/brew-upgrade"',
-    '"$SCRIPT_DIR/brew-configure"',
-    '"$SCRIPT_DIR/brew-service" start',
-]
-
-positions = []
-for item in expected:
-    positions.append(lines.index(item))
-
-assert positions == sorted(positions)
-PY
+grep -q '^BREW_BOOTSTRAP_STEPS=($' "$CONFIG_FILE"
+grep -q '^for step in "\${BREW_BOOTSTRAP_STEPS\[@\]}"; do$' "$SCRIPT_FILE"
+grep -q '^"\$SCRIPT_DIR/brew-service" "\$BREW_BOOTSTRAP_SERVICE_ACTION"$' "$SCRIPT_FILE"
 echo "Brew bootstrap checks passed"

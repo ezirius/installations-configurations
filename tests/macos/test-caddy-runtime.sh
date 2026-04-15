@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT_FILE="$ROOT/scripts/macos/caddy-configure"
+HELPERS="$ROOT/lib/test/runtime-helpers.sh"
 TMPDIR="$(mktemp -d)"
 MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
@@ -10,14 +11,7 @@ STATE_DIR="$TMPDIR/state"
 BREW_PREFIX="$TMPDIR/homebrew"
 mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$STATE_DIR" "$BREW_PREFIX/etc"
 trap 'rm -rf "$TMPDIR"' EXIT
-
-assert_contains() {
-  local file="$1" needle="$2" message="$3"
-  if ! grep -Fq -- "$needle" "$file"; then
-    printf 'assertion failed: %s\nmissing: %s\nfile: %s\n' "$message" "$needle" "$file" >&2
-    exit 1
-  fi
-}
+source "$HELPERS"
 
 cat > "$MOCK_BIN/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -57,7 +51,8 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
 
 TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"
-cmp "$ROOT/config/caddy/shared.Caddyfile" "$TARGET_CONFIG"
+assert_contains "$TARGET_CONFIG" '127.0.0.1:8123 {' 'shared Caddy fragment is deployed'
+assert_contains "$TARGET_CONFIG" 'reverse_proxy https://hovaryn.mioverso.com:8123' 'managed Caddy reverse proxy is deployed'
 assert_contains "$STATE_DIR/caddy.log" 'validate --config' 'managed shared Caddyfile is validated before deployment'
 
 COUNT_BEFORE=$(python3 - "$STATE_DIR/caddy.log" <<'PY'

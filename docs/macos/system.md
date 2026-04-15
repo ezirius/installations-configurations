@@ -2,7 +2,7 @@
 
 ## Managed config model
 
-This repository currently manages a small shared layer of macOS host settings through:
+This repository manages a small shared layer of macOS host settings through:
 
 - `config/system/shared-macos.conf`
 
@@ -18,6 +18,12 @@ The current shared macOS defaults are:
 - disable automatic Spaces rearranging based on recent use
 - prevent automatic system sleep while on AC power when the display is off
 
+The config keys are intentionally written in intent-based language:
+
+- `DOCK_AUTO_HIDE`
+- `DOCK_REORDER_SPACES_BY_RECENT_USE`
+- `AC_POWER_SYSTEM_SLEEP_MINUTES`
+
 ## What the script does
 
 `scripts/macos/system-configure`:
@@ -27,9 +33,10 @@ The current shared macOS defaults are:
 3. applies the managed Dock settings with `defaults`
 4. restarts the Dock only when Dock-related values changed
 5. applies the AC sleep setting with `pmset`
-6. logs only real changes
 
 For portable Macs, the power-management setting is applied with `pmset -c sleep 0`.
+
+For non-portable Macs, it is applied with `pmset -a sleep 0`.
 
 ## Requirements
 
@@ -40,14 +47,11 @@ This script needs:
 
 ## Setup order
 
-Run either:
+Run:
 
-1. `scripts/macos/brew-install`
-2. `scripts/macos/brew-upgrade`
-3. `scripts/macos/brew-configure`
-4. `scripts/macos/brew-service start`
+1. `scripts/macos/system-configure`
 
-or run `scripts/macos/brew-bootstrap` to perform the same managed script sequence once the required prerequisites are already in place.
+The current `scripts/macos/brew-bootstrap` flow does not run `scripts/macos/system-configure` automatically.
 
 ## Verification
 

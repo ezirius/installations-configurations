@@ -7,14 +7,15 @@ REPO_DIR="$TMPDIR/repo"
 STATE_DIR="$TMPDIR/state"
 MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
-mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/system" "$STATE_DIR" "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers"
+mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/system" "$REPO_DIR/config/repo" "$STATE_DIR" "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cp "$ROOT/scripts/macos/system-configure" "$REPO_DIR/scripts/macos/system-configure"
 cp "$ROOT/lib/shell/common.sh" "$REPO_DIR/lib/shell/common.sh"
+cp "$ROOT/config/repo/shared.conf" "$REPO_DIR/config/repo/shared.conf"
 cp "$ROOT/config/system/shared-macos.conf" "$REPO_DIR/config/system/shared-macos.conf"
 cat > "$REPO_DIR/config/system/maldoria-macos.conf" <<'EOF'
-DOCK_AUTOHIDE=false
+DOCK_AUTO_HIDE=false
 EOF
 
 assert_contains() {
@@ -91,5 +92,22 @@ if [[ -f "$STATE_DIR_NOOP/defaults.log" || -f "$STATE_DIR_NOOP/killall.log" || -
   printf 'assertion failed: system-configure should not rewrite Dock or pmset settings when values already match\n' >&2
   exit 1
 fi
+
+STATE_DIR_DESKTOP="$TMPDIR/state-desktop"
+mkdir -p "$STATE_DIR_DESKTOP"
+cat > "$MOCK_BIN/pmset" <<'EOF'
+#!/usr/bin/env bash
+STATE_DIR="${STATE_DIR:?}"
+if [[ "$1 $2" == '-g batt' ]]; then
+  printf 'No battery installed\n'
+elif [[ "$1 $2" == '-g custom' ]]; then
+  printf 'AC Power:\n sleep %s\n' "${PMSET_SLEEP_STATE:-1}"
+else
+  printf '%s\n' "$*" >> "$STATE_DIR/pmset.log"
+fi
+EOF
+chmod +x "$MOCK_BIN/pmset"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR_DESKTOP" DOCK_AUTOHIDE_STATE=0 DOCK_MRU_STATE=0 PMSET_SLEEP_STATE=1 "$REPO_DIR/scripts/macos/system-configure" >/dev/null
+assert_contains "$STATE_DIR_DESKTOP/pmset.log" '-a sleep 0' 'desktop Macs use the default pmset scope'
 
 echo "System runtime checks passed"

@@ -4,6 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0") [caddyfile-path]
+
+Validate and deploy the managed Caddyfile into Homebrew's runtime config path.
+
+Arguments:
+  [caddyfile-path]  Optional explicit Caddyfile override."
+fi
+
 if [[ $# -gt 1 ]]; then
   usage_error "$(basename "$0") takes at most 1 argument: [caddyfile-path]"
 fi
@@ -13,6 +22,10 @@ BREW_PREFIX=""
 TARGET_CONFIG=""
 TEMP_FILE=""
 PYTHON3_COMMAND=""
+
+load_caddy_config() {
+  source_shell_config "$(shared_platform_config_path "config/caddy" "conf")"
+}
 
 cleanup() {
   rm -f "$TEMP_FILE"
@@ -67,23 +80,19 @@ require_command cmp
 require_command caddy "Run scripts/macos/brew-install before configuring Caddy"
 initialize_change_log "scripts/macos/caddy-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
+load_caddy_config
 
 BREW_PREFIX="$(brew --prefix)"
-TARGET_CONFIG="$BREW_PREFIX/etc/Caddyfile"
+TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"
 
 echo "==> Checking Caddy config source"
 if [[ -n "$SOURCE_CONFIG" ]]; then
   [[ -f "$SOURCE_CONFIG" ]] || fail "Caddyfile not found: $SOURCE_CONFIG"
   render_caddyfile "$TARGET_CONFIG.rendered" "$SOURCE_CONFIG"
 else
-  SOURCE_CONFIG="$(shared_host_config_path "config/caddy" "Caddyfile")"
-  [[ -f "$SOURCE_CONFIG" ]] || fail "Shared Caddyfile not found: $SOURCE_CONFIG"
-
-  if [[ -f "$(host_config_path "config/caddy" "Caddyfile")" ]]; then
-    render_caddyfile "$TARGET_CONFIG.rendered" "$SOURCE_CONFIG" "$(host_config_path "config/caddy" "Caddyfile")"
-  else
-    render_caddyfile "$TARGET_CONFIG.rendered" "$SOURCE_CONFIG"
-  fi
+  SOURCE_CONFIG="$(shared_platform_config_path "config/caddy" "Caddyfile")"
+  [[ -f "$SOURCE_CONFIG" ]] || fail "Managed Caddyfile not found: $SOURCE_CONFIG"
+  render_caddyfile "$TARGET_CONFIG.rendered" "$SOURCE_CONFIG"
 fi
 
 echo "==> Validating managed Caddyfile"

@@ -4,12 +4,162 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
-if [[ $# -ne 0 ]]; then
-  usage_error "$(basename "$0") takes no arguments"
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0") [diagnose]
+
+Show Podman status information and run a small verification container.
+
+Notes:
+  - This is primarily an inspection command.
+  - The verification-container step may pull the configured verification image if it is missing locally.
+  - Use 'diagnose' to capture a formatted point-in-time diagnostic report and save it under the configured output directory."
+fi
+
+MODE="${1:-check}"
+if [[ $# -gt 1 ]]; then
+  usage_error "$(basename "$0") takes at most 1 argument: [diagnose]"
+fi
+
+case "$MODE" in
+  check|diagnose) ;;
+  *)
+    usage_error "$(basename "$0") takes at most 1 argument: [diagnose]"
+    ;;
+esac
+
+resolve_diagnose_output_dir() {
+  local configured_dir="$PODMAN_DIAGNOSE_OUTPUT_DIR"
+  if [[ "$configured_dir" = /* ]]; then
+    printf '%s\n' "$configured_dir"
+  else
+    printf '%s/%s\n' "$(repo_root)" "$configured_dir"
+  fi
+}
+
+DIAGNOSE_SUMMARY_ROWS=()
+
+report_line() {
+  printf '%s\n' "$1" | tee -a "$REPORT_FILE"
+}
+
+report_blank() {
+  printf '\n' | tee -a "$REPORT_FILE" >/dev/null
+}
+
+run_diagnose_command() {
+  local title="$1"
+  shift
+  local output
+  local status=0
+  local start_time="$SECONDS"
+  local duration
+
+  report_line "### $title"
+  if output="$($@ 2>&1)"; then
+    :
+  else
+    status=$?
+  fi
+
+  duration=$((SECONDS - start_time))
+  printf '%s\n' "$output" | tee -a "$REPORT_FILE"
+  report_line "[duration: ${duration}s]"
+  if [[ "$status" != "0" ]]; then
+    report_line "[exit status: $status]"
+  fi
+  DIAGNOSE_SUMMARY_ROWS+=("$status|$duration|$title")
+  report_blank
+}
+
+print_diagnose_summary() {
+  local row
+  local status
+  local duration
+  local title
+  local failure_count=0
+  local slowest_duration=-1
+  local slowest_title=""
+
+  report_line "## Summary"
+  report_blank
+
+  for row in "${DIAGNOSE_SUMMARY_ROWS[@]}"; do
+    IFS='|' read -r status duration title <<< "$row"
+    if (( status != 0 )); then
+      failure_count=$((failure_count + 1))
+    fi
+    if (( duration > slowest_duration )); then
+      slowest_duration=$duration
+      slowest_title=$title
+    fi
+  done
+
+  report_line "- Commands captured: ${#DIAGNOSE_SUMMARY_ROWS[@]}"
+  report_line "- Commands with non-zero exit status: $failure_count"
+  report_line "- Slowest command: $slowest_title (${slowest_duration}s)"
+  report_blank
+}
+
+run_diagnose() {
+  local output_dir
+  local timestamp
+  output_dir="$(resolve_diagnose_output_dir)"
+  timestamp="$(current_date)-$(current_time)"
+  mkdir -p "$output_dir"
+  REPORT_FILE="$output_dir/$(detect_log_host_name) Podman Diagnose-$timestamp.log"
+  : > "$REPORT_FILE"
+
+  report_line "## Podman Diagnose"
+  report_blank
+  report_line "- Timestamp: $timestamp"
+  report_line "- Host: $(detect_log_host_name)"
+  report_line "- Output: $REPORT_FILE"
+  report_blank
+  report_line "### Config"
+  report_line "- Machine name: $PODMAN_MACHINE_NAME_DEFAULT"
+  report_line "- Diagnose output dir: $PODMAN_DIAGNOSE_OUTPUT_DIR"
+  report_line "- Verification image: $PODMAN_CHECK_IMAGE"
+  report_blank
+  run_diagnose_command "podman version" podman version
+  run_diagnose_command "podman machine list" podman machine list
+  run_diagnose_command "podman machine inspect" podman machine inspect "$PODMAN_MACHINE_NAME_DEFAULT"
+  run_diagnose_command "podman info" podman info
+  run_diagnose_command "podman ps" podman ps
+  run_diagnose_command "podman ps -a" podman ps -a
+  run_diagnose_command "podman images" podman images
+  run_diagnose_command "podman system df" podman system df
+
+  local event_window
+  for event_window in "${PODMAN_DIAGNOSE_EVENT_WINDOWS[@]}"; do
+    run_diagnose_command "podman events --since $event_window" podman events --since "$event_window"
+  done
+
+  local host_command
+  for host_command in "${PODMAN_DIAGNOSE_HOST_COMMANDS[@]}"; do
+    run_diagnose_command "host $host_command" bash -lc "$host_command"
+  done
+
+  local machine_command
+  for machine_command in "${PODMAN_DIAGNOSE_MACHINE_COMMANDS[@]}"; do
+    run_diagnose_command "podman machine ssh -- $machine_command" podman machine ssh "$PODMAN_MACHINE_NAME_DEFAULT" bash -lc "$machine_command"
+  done
+
+  run_diagnose_command "podman verification container" podman run --rm "$PODMAN_CHECK_IMAGE" "${PODMAN_CHECK_COMMAND[@]}"
+  print_diagnose_summary
+}
+
+if [[ "$MODE" == "diagnose" ]]; then
+  require_macos
+  require_command podman "Install or update Podman first with scripts/macos/brew-bootstrap or scripts/macos/brew-upgrade"
+  source_shell_config "$(shared_platform_config_path "config/podman" "conf")"
+  REPORT_FILE=""
+  run_diagnose
+  exit 0
 fi
 
 require_macos
-require_command podman "Install or update Podman first with scripts/macos/bootstrap or scripts/macos/brew-upgrade"
+require_command podman "Install or update Podman first with scripts/macos/brew-bootstrap or scripts/macos/brew-upgrade"
+source_shell_config "$(shared_platform_config_path "config/podman" "conf")"
 
 echo "==> podman version"
 podman version
@@ -21,4 +171,4 @@ echo "==> podman info"
 podman info
 echo
 echo "==> test container"
-podman run --rm docker.io/library/alpine:latest echo "hello from podman"
+podman run --rm "$PODMAN_CHECK_IMAGE" "${PODMAN_CHECK_COMMAND[@]}"

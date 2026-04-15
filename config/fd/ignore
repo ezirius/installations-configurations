@@ -1,6 +1,0 @@
-.git/
-.jj/
-node_modules/
-dist/
-target/
-coverage/

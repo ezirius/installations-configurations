@@ -4,24 +4,46 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../lib/shell/common.sh"
 
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0") [machine-name]
+
+Deploy the managed Podman machine config and ensure the machine matches it.
+
+Arguments:
+  [machine-name]  Optional Podman machine name override. Defaults to the configured machine name.
+
+Notes:
+  - Stops and restarts a running machine when mutable settings need to change.
+  - Verifies podman info before finishing."
+fi
+
 if [[ $# -gt 1 ]]; then
   usage_error "$(basename "$0") takes at most 1 argument: [machine-name]"
 fi
 
 ROOT="$(repo_root)"
-CONTAINERS_CONF_SOURCE="$ROOT/config/podman/containers.conf"
-CONTAINERS_CONF_TARGET="${XDG_CONFIG_HOME:-$HOME/.config}/containers/containers.conf"
-MACHINE_NAME="${1:-podman-machine-default}"
+CONTAINERS_CONF_SOURCE=""
+CONTAINERS_CONF_TARGET=""
+MACHINE_NAME=""
 MACHINE_CPUS=""
 MACHINE_MEMORY=""
 MACHINE_DISK_SIZE=""
 MACHINE_ROOTFUL=""
-MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine/${MACHINE_NAME}"
+MACHINE_STORAGE_PATH=""
 MACHINE_STATE_BEFORE=""
 MACHINE_STATE_AFTER=""
 MACHINE_SET_HELP=""
+MACHINE_INIT_ARGS=()
 PYTHON3_COMMAND=""
 MACHINE_WAS_RUNNING="0"
+
+load_podman_config() {
+  source_shell_config "$(shared_platform_config_path "config/podman" "conf")"
+  CONTAINERS_CONF_SOURCE="$ROOT/$PODMAN_SOURCE_RELATIVE_PATH"
+  CONTAINERS_CONF_TARGET="$HOME/$PODMAN_TARGET_RELATIVE_PATH"
+  MACHINE_NAME="${1:-$PODMAN_MACHINE_NAME_DEFAULT}"
+  MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH/${MACHINE_NAME}"
+}
 
 machine_set_option_supported() {
   local option_name="$1"
@@ -33,8 +55,7 @@ apply_machine_setting() {
   local option_value="$2"
 
   if ! machine_set_option_supported "$option_name"; then
-    echo "==> Skipping unsupported Podman machine setting: $option_name"
-    return 0
+    fail "Installed Podman does not support required machine setting: $option_name"
   fi
 
   podman machine set "$option_name" "$option_value" "$MACHINE_NAME" >/dev/null
@@ -61,13 +82,61 @@ import json
 import sys
 
 data = json.loads(sys.argv[1])
-if isinstance(data, list) and data:
-    state = data[0].get("State") or {}
+
+if isinstance(data, list):
+    if not data:
+        sys.exit(1)
+    data = data[0]
+
+if not isinstance(data, dict):
+    sys.exit(1)
+
+state = data.get("State")
+if isinstance(state, dict):
     running = state.get("Running")
     if isinstance(running, bool):
         sys.exit(0 if running else 1)
 
+if isinstance(state, str):
+    sys.exit(0 if state.strip().lower() == "running" else 1)
+
 sys.exit(1)
+PY
+}
+
+machine_state_summary() {
+  local inspect_json="$1"
+
+  "$PYTHON3_COMMAND" - "$inspect_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+
+if isinstance(data, list):
+    if not data:
+        raise SystemExit(1)
+    data = data[0]
+
+if not isinstance(data, dict):
+    raise SystemExit(1)
+
+state = data.get("State")
+running = None
+if isinstance(state, dict):
+    running = state.get("Running")
+elif isinstance(state, str):
+    running = state.strip().lower() == "running"
+
+summary = {
+    "running": running,
+    "cpus": data.get("cpus", data.get("CPUs")),
+    "memory": data.get("memory", data.get("Memory")),
+    "disk_size": data.get("disk_size", data.get("diskSize", data.get("DiskSize"))),
+    "rootful": data.get("rootful", data.get("Rootful")),
+}
+
+print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
 PY
 }
 
@@ -94,10 +163,11 @@ require_clt
 require_command cmp
 initialize_change_log "scripts/macos/podman-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
+load_podman_config "$@"
 
 echo "==> Checking podman"
 if ! command -v podman >/dev/null 2>&1; then
-  fail "podman is not installed; run scripts/macos/brew-configure or scripts/macos/brew-upgrade first"
+  fail "podman is not installed; run scripts/macos/brew-install first"
 fi
 
 echo "==> Checking source containers.conf"
@@ -110,6 +180,12 @@ MACHINE_CPUS="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" cpus)"
 MACHINE_MEMORY="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" memory)"
 MACHINE_DISK_SIZE="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" disk_size)"
 MACHINE_ROOTFUL="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" rootful)"
+MACHINE_INIT_ARGS=(
+  --cpus "$MACHINE_CPUS"
+  --memory "$MACHINE_MEMORY"
+  --disk-size "$MACHINE_DISK_SIZE"
+  --rootful "$MACHINE_ROOTFUL"
+)
 
 echo "==> Deploying containers.conf"
 mkdir -p "$(dirname "$CONTAINERS_CONF_TARGET")"
@@ -120,23 +196,22 @@ fi
 
 echo "==> Ensuring Podman machine exists"
 if ! podman machine inspect "$MACHINE_NAME" >/dev/null 2>&1; then
-  podman machine init "$MACHINE_NAME"
-  apply_machine_preferences
+  podman machine init "${MACHINE_INIT_ARGS[@]}" "$MACHINE_NAME"
   podman machine start "$MACHINE_NAME"
   if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
-    MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine"
+    MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH"
   fi
   log_change "Configuration" "Podman machine" "Created" "$MACHINE_STORAGE_PATH" "Created machine $MACHINE_NAME"
 else
-  MACHINE_STATE_BEFORE="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
+  MACHINE_STATE_BEFORE="$(machine_state_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
   prepare_machine_for_update
   apply_machine_preferences
   restore_machine_after_update
-  MACHINE_STATE_AFTER="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
+  MACHINE_STATE_AFTER="$(machine_state_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
 
   if [[ "$MACHINE_STATE_BEFORE" != "$MACHINE_STATE_AFTER" ]]; then
     if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
-      MACHINE_STORAGE_PATH="${HOME}/.local/share/containers/podman/machine"
+      MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH"
     fi
     log_change "Configuration" "Podman machine" "Updated" "$MACHINE_STORAGE_PATH" "Updated machine $MACHINE_NAME settings"
   fi

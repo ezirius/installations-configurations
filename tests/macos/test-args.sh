@@ -34,9 +34,6 @@ assert_rejects_args "$ROOT/scripts/macos/brew-configure" 'takes no arguments'
 assert_rejects_args "$ROOT/scripts/macos/caddy-trust" 'takes no arguments'
 assert_rejects_args "$ROOT/scripts/macos/caddy-service" 'takes exactly 1 argument'
 assert_rejects_args "$ROOT/scripts/macos/brew-service" 'takes exactly 1 argument'
-assert_rejects_args "$ROOT/scripts/macos/devtools-configure" 'takes no arguments'
-assert_rejects_args "$ROOT/scripts/macos/podman-check" 'takes no arguments'
-assert_rejects_args "$ROOT/scripts/macos/git-configure" 'takes no arguments'
 assert_rejects_args "$ROOT/scripts/macos/system-configure" 'takes no arguments'
 
 assert_rejects_two_args() {
@@ -55,9 +52,7 @@ assert_rejects_two_args() {
 assert_rejects_two_args "$ROOT/scripts/macos/brew-install" 'takes at most 1 argument'
 assert_rejects_two_args "$ROOT/scripts/macos/brew-upgrade" 'takes at most 1 argument'
 assert_rejects_two_args "$ROOT/scripts/macos/caddy-configure" 'takes at most 1 argument'
-assert_rejects_two_args "$ROOT/scripts/macos/ghostty-configure" 'takes at most 1 argument'
-assert_rejects_two_args "$ROOT/scripts/macos/jj-configure" 'takes at most 1 argument'
-assert_rejects_two_args "$ROOT/scripts/macos/nushell-configure" 'takes at most 1 argument'
+assert_rejects_two_args "$ROOT/scripts/macos/podman-check" 'takes at most 1 argument'
 assert_rejects_two_args "$ROOT/scripts/macos/podman-configure" 'takes at most 1 argument'
 
 echo "Argument validation checks passed"

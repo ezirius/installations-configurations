@@ -10,10 +10,13 @@ fi
 
 SYSTEM_CONFIG_SHARED="$(shared_platform_config_path "config/system" "conf")"
 SYSTEM_CONFIG_HOST="$(host_platform_config_path "config/system" "conf")"
-DOCK_AUTOHIDE=""
-DOCK_MRU_SPACES=""
-PMSET_AC_SLEEP=""
+DOCK_AUTO_HIDE=""
+DOCK_REORDER_SPACES_BY_RECENT_USE=""
+AC_POWER_SYSTEM_SLEEP_MINUTES=""
 DOCK_CHANGED="0"
+DOCK_DOMAIN="com.apple.dock"
+DOCK_AUTO_HIDE_KEY="autohide"
+DOCK_REORDER_SPACES_BY_RECENT_USE_KEY="mru-spaces"
 
 load_system_config() {
   local config_path
@@ -40,16 +43,15 @@ set_dock_bool() {
   local item_name="$3"
   local current_value=""
 
-  current_value="$(defaults read com.apple.dock "$key_name" 2>/dev/null || printf '0')"
+  current_value="$(defaults read "$DOCK_DOMAIN" "$key_name" 2>/dev/null || printf '0')"
   desired_value="$(bool_to_defaults_value "$desired_value")"
 
   if [[ "$current_value" == "$desired_value" ]]; then
     return 0
   fi
 
-  defaults write com.apple.dock "$key_name" -bool "$desired_value"
+  defaults write "$DOCK_DOMAIN" "$key_name" -bool "$desired_value"
   DOCK_CHANGED="1"
-  log_change "Configuration" "$item_name" "Updated" "com.apple.dock" "Set $key_name=$desired_value"
 }
 
 mac_is_portable() {
@@ -82,7 +84,6 @@ apply_pmset_sleep() {
   fi
 
   sudo pmset "$scope_flag" sleep "$desired_value"
-  log_change "Configuration" "Power management" "Updated" "pmset" "Set $scope_flag sleep $desired_value to prevent automatic system sleep while on AC power"
 }
 
 require_macos
@@ -91,19 +92,18 @@ require_command defaults
 require_command grep
 require_command pmset
 require_command sudo
-initialize_change_log "scripts/macos/system-configure"
 
 echo "==> Loading managed macOS system config"
 [[ -f "$SYSTEM_CONFIG_SHARED" ]] || fail "Shared macOS system config not found: $SYSTEM_CONFIG_SHARED"
 load_system_config
 
-[[ -n "$DOCK_AUTOHIDE" ]] || fail "DOCK_AUTOHIDE is not set in the managed macOS system config"
-[[ -n "$DOCK_MRU_SPACES" ]] || fail "DOCK_MRU_SPACES is not set in the managed macOS system config"
-[[ -n "$PMSET_AC_SLEEP" ]] || fail "PMSET_AC_SLEEP is not set in the managed macOS system config"
+[[ -n "$DOCK_AUTO_HIDE" ]] || fail "DOCK_AUTO_HIDE is not set in the managed macOS system config"
+[[ -n "$DOCK_REORDER_SPACES_BY_RECENT_USE" ]] || fail "DOCK_REORDER_SPACES_BY_RECENT_USE is not set in the managed macOS system config"
+[[ -n "$AC_POWER_SYSTEM_SLEEP_MINUTES" ]] || fail "AC_POWER_SYSTEM_SLEEP_MINUTES is not set in the managed macOS system config"
 
 echo "==> Applying Dock settings"
-set_dock_bool autohide "$DOCK_AUTOHIDE" "Dock autohide"
-set_dock_bool mru-spaces "$DOCK_MRU_SPACES" "Dock mru-spaces"
+set_dock_bool "$DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" "Dock auto-hide"
+set_dock_bool "$DOCK_REORDER_SPACES_BY_RECENT_USE_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" "Dock recent-spaces reordering"
 
 if [[ "$DOCK_CHANGED" == "1" ]]; then
   killall Dock >/dev/null 2>&1 || true
@@ -111,6 +111,6 @@ fi
 
 echo "==> Applying power settings"
 sudo -v
-apply_pmset_sleep "$PMSET_AC_SLEEP"
+apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
 
 echo "==> macOS system settings are ready"

@@ -1,19 +1,15 @@
 # Personal macOS installation and configuration helpers
 
-This repository currently automates a macOS-focused setup flow for Homebrew, Caddy, Ghostty, Nushell, a shared CLI developer-tooling baseline, Podman, and GitHub SSH/Git configuration.
+This repository now automates the macOS Homebrew, Caddy, Podman, and standalone system-settings workflow.
 
 ## Layout
 
 - `config/`
   - `brew/` contains the shared platform Brewfiles applied by `scripts/macos/brew-install`
-  - `caddy/` contains the shared Caddy config copied into the Homebrew Caddy service location
+  - `caddy/` contains the managed macOS Caddy config copied into the Homebrew Caddy service location
   - `podman/` contains Podman machine defaults copied into `~/.config/containers/`
-  - `system/` contains shared and optional host-specific macOS system settings applied by `scripts/macos/system-configure`
-  - `ghostty/` contains the managed Ghostty include config copied into `~/.config/ghostty/`
-  - `bat/`, `eza/`, `tlrc/`, `micro/`, `vim/`, `starship/`, `atuin/`, `zellij/`, `btop/`, `fd/`, and `lazygit/` contain the shared developer-tooling config copied into `~/.config/`
-  - `ssh/` contains the current host-specific public GitHub SSH metadata, such as `config/ssh/maldoria.conf`
-  - `jj/` contains the managed `jj` config copied into `~/.config/jj/`
-  - `nushell/` contains the managed Nushell autoload config copied into `~/.config/nushell/`
+  - `repo/` contains repository-wide naming and path-layout metadata
+  - `system/` contains the managed macOS system-setting defaults
 - `docs/macos/` contains macOS-specific setup notes
 - `lib/shell/` contains shared shell helpers used by scripts
 - `scripts/macos/` contains macOS setup and verification scripts
@@ -23,14 +19,9 @@ This repository currently automates a macOS-focused setup flow for Homebrew, Cad
 
 Before running the managed setup flow:
 
-1. Set this repository clone's local Git identity because `scripts/macos/jj-configure` reads `user.name` and `user.email` from this clone:
+1. Ensure `python3` is already available on the machine. Several managed scripts use it before the Brewfile-managed packages are installed.
 
-```sh
-git config user.name "Your Name"
-git config user.email "you@example.com"
-```
-
-2. Ensure `python3` is already available on the machine. Several managed scripts use it before the Brewfile-managed packages are installed. Once Homebrew Python is installed from the shared Brewfile, the scripts prefer that managed Python automatically.
+2. Ensure Homebrew itself is already installed. This repository intentionally does not run the upstream moving installer script automatically.
 
 Run these in order:
 
@@ -42,97 +33,57 @@ Run these in order:
 
 Or run `scripts/macos/brew-bootstrap` to execute the same managed script sequence in one command once the prerequisites above are already in place.
 
-The shared macOS Brewfile installs the default tooling for this setup, including `ghostty`, `nushell`, `git`, `ripgrep`, `fd`, `fzf`, `bat`, `eza`, `jq`, `just`, `uv`, `starship`, `atuin`, `micro`, `vim`, `zellij`, `jj`, `caddy`, and the container/inspection toolchain. The current repository policy is to keep general macOS config in `shared-macos` files, reserve `shared-linux` for Linux-only support when it is added, and keep host-specific config limited to Git/SSH metadata such as `config/ssh/maldoria.conf`. The scripts can apply host-specific Brewfiles later if those are added, but the current repository only ships the shared macOS Brewfile. The managed terminal workflow is Ghostty launching Nushell directly, while the macOS default login shell stays unchanged.
+The shared macOS Brewfile installs the managed package set for this repository: `caddy`, `podman`, `podman-compose`, and `podman-desktop`. Wrapper defaults live in metadata files under `config/`, with `config/repo/` and `config/podman/` supporting the remaining shared shell helpers.
+
+## Layered config
+
+This repository supports layered config where a shared file can be extended by a matching host-specific file when one exists.
+
+- Brewfiles:
+  - shared: `config/brew/shared-macos.Brewfile`
+  - host-specific: `config/brew/<host>-macos.Brewfile`
+In the current repository state:
+
+- a host-specific Brewfile is optional and only applied when present
 
 `scripts/macos/brew-install` first checks for Xcode Command Line Tools and triggers `xcode-select --install` if they are missing, then stops until that installation is complete. After that, it checks for an existing Homebrew installation, stops with a manual-install message when Homebrew is missing, and then installs only missing entries from the shared Brewfile package set. `scripts/macos/brew-install` and `scripts/macos/brew-upgrade` also require this repository to be committed and pushed before they run. This repository does not execute the upstream moving installer script automatically because that path is not checksum-verifiable in this workflow.
 
-`caddy` is currently managed through the shared `config/caddy/shared.Caddyfile` and Homebrew's background service integration. The repository is structured so host-specific Caddy files can be added later if needed, but the current policy is to keep Caddy in the shared macOS layer and reserve host-specific config for Git/SSH items only.
+`caddy` is managed through `config/caddy/shared-macos.Caddyfile` and Homebrew's background service integration.
 
 The normal Caddy change workflow is:
 
-1. Edit `config/caddy/shared.Caddyfile`
+1. Edit `config/caddy/shared-macos.Caddyfile`
 2. Run `scripts/macos/caddy-configure`
 3. Run `scripts/macos/caddy-service reload`
 
-For local HTTPS trust, run `scripts/macos/caddy-trust` after the service is running.
+For local HTTPS trust, run `scripts/macos/caddy-trust` after `scripts/macos/caddy-configure` has deployed the managed Caddyfile. In the default workflow this already happens inside `scripts/macos/brew-configure`.
 
-`jj` is managed through `~/.config/jj/config.toml`, and `scripts/macos/jj-configure` renders that file from this repository clone's local `git config user.name` and `git config user.email`. Set those values in this clone before running `jj-configure` or `brew-bootstrap`.
+`scripts/macos/brew-configure` is the post-install umbrella command for the current Brew workflow. It runs the configured wrapper steps from `config/brew/shared-macos.conf`, which currently are:
 
-`scripts/macos/devtools-configure` deploys the shared app config for the CLI and editor stack into `~/.config`. This includes blue dark-mode theme defaults for `bat`, `eza`, `tlrc`, `starship`, `zellij`, `btop`, `micro`, `vim`, and `lazygit`, plus managed behaviour/config for tools such as `fd` and `atuin`. On macOS it also bridges `~/.config/lazygit` and `~/.config/zellij` into the Application Support paths those tools still probe by default, and writes `~/.vimrc` as a bridge to `~/.config/vim/vimrc`.
-
-`scripts/macos/brew-configure` is the post-install umbrella command. It runs the managed configuration steps for Caddy, Ghostty, `jj`, Nushell, the shared devtools layer, the shared macOS system settings, and Podman.
+1. `scripts/macos/caddy-configure`
+2. `scripts/macos/caddy-trust`
+3. `scripts/macos/podman-configure`
 
 `scripts/macos/brew-service` is the service-lifecycle umbrella command. It currently manages the background Caddy service and accepts `start`, `stop`, `restart`, `reload`, and `status`.
 
-The managed shell integration remains Nushell-only. The Nushell autoload file wires together `fd`, `fzf`, `bat`, `eza`, `zoxide`, `atuin`, `starship`, `jj`, `direnv`, `jq`, and `yq`. No `bash` or `zsh` shell hooks are used for this workflow.
-
-`scripts/macos/system-configure` currently applies the shared macOS host settings from `config/system/shared-macos.conf`. The current shared defaults enable Dock auto-hide, disable automatic Spaces rearranging based on recent use, and prevent automatic sleeping on AC power while the display is off. Host-specific system overrides are intentionally not used at the moment.
-
 Managed user config is centralised under `~/.config`:
 
-- `~/.config/ghostty/config.ghostty`
-- `~/.config/ghostty/installations-configurations.ghostty`
-- `~/.config/nushell/`
-- `~/.config/git/installations-configurations.conf`
-- `~/.config/jj/config.toml`
-- `~/.config/bat/`
-- `~/.config/eza/`
-- `~/.config/tlrc/`
-- `~/.config/micro/`
-- `~/.config/vim/`
-- `~/.config/starship/`
-- `~/.config/atuin/`
-- `~/.config/zellij/`
-- `~/.config/btop/`
-- `~/.config/fd/`
-- `~/.config/lazygit/`
 - `~/.config/containers/containers.conf`
-
-Additional compatibility bridge:
-
-- `~/.vimrc` -> `source ~/.config/vim/vimrc`
 
 Where possible, the repository adds managed include or autoload files instead of replacing user primary config wholesale.
 
-As an extra macOS compatibility bridge, `scripts/macos/nushell-configure` also links `~/Library/Application Support/nushell` to `~/.config/nushell` when that path is available for use. If `~/Library/Application Support/nushell` already exists as a real unmanaged directory or file, the script stops so you can migrate or remove that content first instead of overwriting it.
+Operational defaults are expected to live in configuration files under `config/` rather than in scripts or `lib/shell/common.sh`. Scripts keep control flow and validation logic, while config files own path layouts, service defaults, deployment manifests, and wrapper-level default values.
 
-See `docs/macos/caddy.md`, `docs/macos/devtools.md`, `docs/macos/git.md`, `docs/macos/ghostty.md`, `docs/macos/nushell.md`, `docs/macos/podman.md`, and `docs/macos/system.md` for the focused macOS notes. The machine install step applies the configured Podman machine settings before starting the machine.
+The repository also ships a standalone macOS system-settings command:
 
-## GitHub setup on Maldoria
+1. `scripts/macos/system-configure`
 
-Run `scripts/macos/git-configure` from inside the repo you want to configure.
+It is not part of the current Brew bootstrap path.
 
-- It reads `user.name` and `user.email` from this repository clone's local Git config
-- It reads public key metadata from `config/ssh/<host>.conf`
-- It exports the matching `.pub` files into `~/.ssh/`
-- It writes a repo-specific SSH alias into `~/.ssh/config`
-- It writes a managed Git include into `~/.config/git/installations-configurations.conf`
-- It adds that include to `~/.gitconfig` through `include.path`
-- It updates the current repo's `origin` to use that alias
-- It enables SSH commit signing with the host signing key and updates `~/.ssh/allowed_signers`
-
-The matching private keys must already exist in 1Password and be available through the 1Password SSH agent. Run this after the shared Brewfile-managed `git`, `git-delta`, and `micro` tooling is installed if you want the full managed review/editor defaults to be effective immediately.
+See `docs/macos/caddy.md`, `docs/macos/podman.md`, and `docs/macos/system.md` for the focused macOS notes. The machine install step applies the configured Podman machine settings before starting the machine.
 
 ## Verification
 
 Run `tests/macos/test-all.sh` to execute the repository shell checks in one command.
 
 Scripts that do not take positional arguments now reject them explicitly, and scripts with a single optional override accept at most one positional argument.
-
-## Change log
-
-When a script makes filesystem changes, it appends rows to a host log in `~/Documents/Ezirius/Systems/Installations and Configurations/Computers`.
-
-- Open logfile format: `<Host> Installations and Configurations-<YYYYMMDD>---------.csv`
-- Closed files are any matching host logs whose names no longer end with `---------`
-- If an open host log already exists, scripts keep appending to it until you close it by renaming the trailing dashes to an end date; otherwise they create a new open file for the current date
-- Logged columns are `Date`, `Time`, `Username`, `Type`, `Script`, `Item`, `Change`, `Path`, and `Details`
-- Only real filesystem changes are logged
-- This includes Homebrew installation, Homebrew metadata updates, Brewfile-managed installs/upgrades, managed config-file writes, and Git/SSH config updates
-- Orchestrator and check scripts such as `scripts/macos/bootstrap` and `scripts/macos/podman-check` do not write their own CSV rows unless they directly make filesystem changes
-
-Example row:
-
-```csv
-"20260322","143505","ezirius","Configuration","scripts/macos/git-configure","SSH config","Updated","/Users/ezirius/.ssh/config","Managed GitHub SSH alias github-maldoria-installations-configurations"
-```
