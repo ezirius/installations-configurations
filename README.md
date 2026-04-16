@@ -63,6 +63,7 @@ For local HTTPS trust, run `scripts/macos/caddy-trust` after `scripts/macos/cadd
 1. `scripts/macos/caddy-configure`
 2. `scripts/macos/caddy-trust`
 3. `scripts/macos/podman-configure`
+4. `scripts/macos/system-configure`
 
 `scripts/macos/brew-service` is the service-lifecycle umbrella command. It currently manages the background Caddy service and accepts `start`, `stop`, `restart`, `reload`, and `status`.
 
@@ -74,11 +75,11 @@ Where possible, the repository adds managed include or autoload files instead of
 
 Operational defaults are expected to live in configuration files under `config/` rather than in scripts or `lib/shell/common.sh`. Scripts keep control flow and validation logic, while config files own path layouts, service defaults, deployment manifests, and wrapper-level default values.
 
-The repository also ships a standalone macOS system-settings command:
+The repository also ships a macOS system-settings command:
 
 1. `scripts/macos/system-configure`
 
-It is not part of the current Brew bootstrap path.
+It now runs as part of `scripts/macos/brew-configure`, and it can still be run directly when you only want to re-apply the managed system settings.
 
 Run `scripts/macos/system-configure --help` to inspect the command without applying the managed settings.
 
