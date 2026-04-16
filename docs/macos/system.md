@@ -49,11 +49,12 @@ This script needs:
 
 Run:
 
-1. `scripts/macos/system-configure`
+1. `scripts/macos/brew-configure`
+2. or run `scripts/macos/system-configure` directly when you only want to re-apply the managed system settings
 
 Run `scripts/macos/system-configure --help` to review the managed command usage without applying changes.
 
-The current `scripts/macos/brew-bootstrap` flow does not run `scripts/macos/system-configure` automatically.
+The current `scripts/macos/brew-configure` flow includes `scripts/macos/system-configure` as one of its configured steps, so the broader Homebrew-backed configuration now applies these managed system settings automatically.
 
 ## Verification
 

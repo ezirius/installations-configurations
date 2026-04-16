@@ -36,6 +36,7 @@ check_help "$ROOT/scripts/macos/brew-upgrade"
 check_help "$ROOT/scripts/macos/brew-configure"
 assert_contains "$TMPDIR/brew-configure.out" 'caddy-configure' 'brew-configure help lists configured steps'
 assert_contains "$TMPDIR/brew-configure.out" 'podman-configure' 'brew-configure help reflects the current config-driven workflow'
+assert_contains "$TMPDIR/brew-configure.out" 'system-configure' 'brew-configure help reflects system-configure in the configured step list'
 check_help "$ROOT/scripts/macos/brew-service"
 assert_contains "$TMPDIR/brew-service.out" 'caddy-service' 'brew-service help lists managed services from config'
 check_help "$ROOT/scripts/macos/caddy-configure"
