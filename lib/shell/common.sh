@@ -215,6 +215,30 @@ show_help() {
   exit 0
 }
 
+prompt_yes_no() {
+  local prompt_message="$1"
+  local response=""
+
+  while true; do
+    printf '%s [y/N]: ' "$prompt_message"
+    if ! IFS= read -r response; then
+      return 2
+    fi
+
+    case "$response" in
+      [Yy]|[Yy][Ee][Ss])
+        return 0
+        ;;
+      ""|[Nn]|[Nn][Oo])
+        return 1
+        ;;
+      *)
+        printf 'Please answer yes or no.\n'
+        ;;
+    esac
+  done
+}
+
 current_date() {
   date '+%Y%m%d'
 }

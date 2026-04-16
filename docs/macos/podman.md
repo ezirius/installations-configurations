@@ -20,7 +20,7 @@ The managed machine name and diagnose defaults live in:
 
 - `~/.config/containers/containers.conf`
 
-and then ensures the managed Podman machine exists, applies the configured settings, and starts the machine if needed.
+and then ensures the managed Podman machine exists, compares the existing machine against the managed settings, and starts the machine if needed.
 
 The default managed machine name is controlled by `PODMAN_MACHINE_NAME_DEFAULT`.
 
@@ -38,11 +38,19 @@ The current shared defaults are intentionally conservative baseline values:
 1. validates that `podman` and the managed config source are available
 2. copies the managed `containers.conf` into `~/.config/containers/containers.conf`
 3. creates the managed machine if it does not yet exist
-4. applies supported machine settings from `containers.conf`
-5. safely stops and restarts an already-running machine when mutable settings need to change
-6. verifies that `podman info` succeeds at the end
+4. computes the per-setting drift between the existing machine and the managed `containers.conf`
+5. asks for approval before applying managed setting changes to an existing machine
+6. stops and restarts a running machine only after approval, and only for the settings that actually differ
+7. reports the specific differing settings and exits cleanly if Podman reconciliation is bypassed by user choice
+8. verifies that `podman info` succeeds at the end unless reconciliation was bypassed
 
 If the installed Podman build does not support a required managed machine-setting flag, `scripts/macos/podman-configure` fails clearly instead of silently drifting from the configured defaults.
+
+The managed machine config covers all settings in `config/podman/containers.conf`, not just disk size. Today that means `cpus`, `memory`, `disk_size`, and `rootful` are all compared against the current machine state.
+
+For existing machines, `disk_size` is treated as a grow-only managed setting. If the managed value is larger than the current machine disk, `scripts/macos/podman-configure` can grow it after approval. If the managed value is smaller than the current machine disk, the drift is reported clearly and not applied automatically.
+
+If you decline the approval prompt, `scripts/macos/podman-configure` exits successfully so the rest of `scripts/macos/brew-configure` can keep running, and it prints the exact managed settings that still differ.
 
 ## Verification
 

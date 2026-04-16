@@ -45,6 +45,8 @@ check_help "$ROOT/scripts/macos/podman-check"
 PATH="$MOCK_BIN:$PATH" "$ROOT/scripts/macos/podman-check" --help >"$TMPDIR/podman-check-help.out"
 assert_contains "$TMPDIR/podman-check-help.out" 'diagnose' 'podman-check help documents the diagnose mode'
 check_help "$ROOT/scripts/macos/podman-configure"
+assert_contains "$TMPDIR/podman-configure.out" 'Asks for approval before applying managed machine-setting changes' 'podman-configure help documents the approval prompt'
+assert_contains "$TMPDIR/podman-configure.out" 'If approval is declined, Podman reconciliation is bypassed' 'podman-configure help documents the bypass behavior'
 check_help "$ROOT/scripts/macos/system-configure"
 check_help "$ROOT/scripts/macos/brew-bootstrap"
 assert_contains "$TMPDIR/brew-bootstrap.out" 'brew-install' 'brew-bootstrap help lists configured bootstrap steps'
