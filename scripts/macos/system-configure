@@ -102,6 +102,7 @@ apply_pmset_sleep() {
     return 0
   fi
 
+  sudo -v
   sudo pmset "$scope_flag" sleep "$desired_value"
 }
 
@@ -129,7 +130,6 @@ if [[ "$DOCK_CHANGED" == "1" ]]; then
 fi
 
 echo "==> Applying power settings"
-sudo -v
 apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
 
 echo "==> macOS system settings are ready"
