@@ -68,6 +68,8 @@ fi
 EOF
 cat > "$MOCK_BIN/sudo" <<'EOF'
 #!/usr/bin/env bash
+STATE_DIR="${STATE_DIR:?}"
+printf '%s\n' "$*" >> "$STATE_DIR/sudo.log"
 if [[ "$1" == -v ]]; then
   exit 0
 fi
@@ -86,14 +88,15 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" DOCK_AUTOHIDE_STATE=1 DOCK_MRU_STATE=1 "$REPO_DIR/scripts/macos/system-configure" >/dev/null
 assert_contains "$STATE_DIR/defaults.log" 'write com.apple.dock autohide -bool false' 'host system config overrides shared dock autohide'
 assert_contains "$STATE_DIR/defaults.log" 'write com.apple.dock mru-spaces -bool false' 'shared system config disables dock space rearranging'
+assert_contains "$STATE_DIR/sudo.log" '-v' 'system-configure refreshes sudo before applying pmset changes'
 assert_contains "$STATE_DIR/pmset.log" '-c sleep 0' 'portable Macs use AC-only pmset sleep control'
 assert_contains "$STATE_DIR/killall.log" 'Dock' 'Dock is restarted when Dock settings change'
 
 STATE_DIR_NOOP="$TMPDIR/state-noop"
 mkdir -p "$STATE_DIR_NOOP" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR_NOOP" DOCK_AUTOHIDE_STATE=0 DOCK_MRU_STATE=0 PMSET_SLEEP_STATE=0 "$REPO_DIR/scripts/macos/system-configure" >/dev/null
-if [[ -f "$STATE_DIR_NOOP/defaults.log" || -f "$STATE_DIR_NOOP/killall.log" || -f "$STATE_DIR_NOOP/pmset.log" ]]; then
-  printf 'assertion failed: system-configure should not rewrite Dock or pmset settings when values already match\n' >&2
+if [[ -f "$STATE_DIR_NOOP/defaults.log" || -f "$STATE_DIR_NOOP/killall.log" || -f "$STATE_DIR_NOOP/pmset.log" || -f "$STATE_DIR_NOOP/sudo.log" ]]; then
+  printf 'assertion failed: system-configure should not rewrite Dock, pmset, or refresh sudo when values already match\n' >&2
   exit 1
 fi
 
