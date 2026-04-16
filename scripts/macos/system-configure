@@ -41,9 +41,17 @@ load_system_config() {
 
 bool_to_defaults_value() {
   case "$1" in
-    true) printf '%s\n' '1' ;;
-    false) printf '%s\n' '0' ;;
+    true) printf '%s\n' 'true' ;;
+    false) printf '%s\n' 'false' ;;
     *) fail "Invalid boolean value: $1" ;;
+  esac
+}
+
+normalize_defaults_bool_value() {
+  case "$1" in
+    1|true) printf '%s\n' 'true' ;;
+    0|false) printf '%s\n' 'false' ;;
+    *) fail "Invalid defaults boolean value: $1" ;;
   esac
 }
 
@@ -54,6 +62,7 @@ set_dock_bool() {
   local current_value=""
 
   current_value="$(defaults read "$DOCK_DOMAIN" "$key_name" 2>/dev/null || printf '0')"
+  current_value="$(normalize_defaults_bool_value "$current_value")"
   desired_value="$(bool_to_defaults_value "$desired_value")"
 
   if [[ "$current_value" == "$desired_value" ]]; then

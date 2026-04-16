@@ -48,6 +48,10 @@ if [[ "\$1" == read ]]; then
     mru-spaces) printf '%s\n' "\${DOCK_MRU_STATE:-1}" ;;
   esac
 elif [[ "\$1" == write ]]; then
+  if [[ "\$4" == -bool && "\$5" != true && "\$5" != false ]]; then
+    printf 'defaults bool expects true/false\n' >&2
+    exit 1
+  fi
   printf '%s\n' "\$*" >> "\$STATE_DIR/defaults.log"
 fi
 EOF
@@ -80,8 +84,8 @@ EOF
 chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BIN/defaults" "$MOCK_BIN/pmset" "$MOCK_BIN/sudo" "$MOCK_BIN/killall" "$MOCK_BIN/grep"
 
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" DOCK_AUTOHIDE_STATE=1 DOCK_MRU_STATE=1 "$REPO_DIR/scripts/macos/system-configure" >/dev/null
-assert_contains "$STATE_DIR/defaults.log" 'write com.apple.dock autohide -bool 0' 'host system config overrides shared dock autohide'
-assert_contains "$STATE_DIR/defaults.log" 'write com.apple.dock mru-spaces -bool 0' 'shared system config disables dock space rearranging'
+assert_contains "$STATE_DIR/defaults.log" 'write com.apple.dock autohide -bool false' 'host system config overrides shared dock autohide'
+assert_contains "$STATE_DIR/defaults.log" 'write com.apple.dock mru-spaces -bool false' 'shared system config disables dock space rearranging'
 assert_contains "$STATE_DIR/pmset.log" '-c sleep 0' 'portable Macs use AC-only pmset sleep control'
 assert_contains "$STATE_DIR/killall.log" 'Dock' 'Dock is restarted when Dock settings change'
 
