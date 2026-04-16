@@ -157,10 +157,10 @@ elif isinstance(state, str):
 
 summary = {
     "running": running,
-    "cpus": data.get("cpus", data.get("CPUs")),
-    "memory": data.get("memory", data.get("Memory")),
-    "disk_size": data.get("disk_size", data.get("diskSize", data.get("DiskSize"))),
-    "rootful": data.get("rootful", data.get("Rootful")),
+    "cpus": data.get("Resources", {}).get("CPUs"),
+    "memory": data.get("Resources", {}).get("Memory"),
+    "disk_size": data.get("Resources", {}).get("DiskSize"),
+    "rootful": data.get("Rootful"),
 }
 
 print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
@@ -201,10 +201,10 @@ if not isinstance(data, dict):
     raise SystemExit(1)
 
 summary = {
-    "cpus": data.get("cpus", data.get("CPUs")),
-    "memory": data.get("memory", data.get("Memory")),
-    "disk_size": data.get("disk_size", data.get("diskSize", data.get("DiskSize"))),
-    "rootful": data.get("rootful", data.get("Rootful")),
+    "cpus": data.get("Resources", {}).get("CPUs"),
+    "memory": data.get("Resources", {}).get("Memory"),
+    "disk_size": data.get("Resources", {}).get("DiskSize"),
+    "rootful": data.get("Rootful"),
 }
 
 print(json.dumps(summary, sort_keys=True, separators=(",", ":")))

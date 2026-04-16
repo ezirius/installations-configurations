@@ -102,10 +102,11 @@ if ($program =~ /json\.loads/ && @ARGV >= 1) {
     if ($program =~ /"running"/) {
       $summary{running} = $running;
     }
-    $summary{cpus} = exists $data->{cpus} ? $data->{cpus} : $data->{CPUs};
-    $summary{memory} = exists $data->{memory} ? $data->{memory} : $data->{Memory};
-    $summary{disk_size} = exists $data->{disk_size} ? $data->{disk_size} : exists $data->{diskSize} ? $data->{diskSize} : $data->{DiskSize};
-    $summary{rootful} = exists $data->{rootful} ? $data->{rootful} : $data->{Rootful};
+    my $resources = ref($data->{Resources}) eq 'HASH' ? $data->{Resources} : {};
+    $summary{cpus} = $resources->{CPUs};
+    $summary{memory} = $resources->{Memory};
+    $summary{disk_size} = $resources->{DiskSize};
+    $summary{rootful} = $data->{Rootful};
     print encode_json(\%summary), "\n";
     exit 0;
   }
@@ -194,9 +195,9 @@ case "$1" in
     case "$2" in
       inspect)
         if [[ -f "$STATE_DIR/after-update" ]]; then
-          printf '[{"State":"running","cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
+          printf '[{"State":"running","Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         else
-          printf '[{"State":"running","cpus":2,"memory":8192,"diskSize":60,"rootful":false}]\n'
+          printf '[{"State":"running","Resources":{"CPUs":2,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         fi
         ;;
       set)
@@ -245,7 +246,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":"running","cpus":2,"memory":4096,"diskSize":60,"rootful":true}]\n'
+        printf '[{"State":"running","Resources":{"CPUs":2,"DiskSize":60,"Memory":4096,"USBs":[]},"Rootful":true}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -285,7 +286,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
+        printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -324,7 +325,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":true},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
+        printf '[{"State":{"Running":true},"Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -350,6 +351,49 @@ PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STAT
 assert_not_contains "$STATE_DIR/podman.log" 'machine stop podman-machine-default' 'running unchanged machine should not be stopped before applying settings'
 assert_not_contains "$STATE_DIR/podman.log" 'machine start podman-machine-default' 'running unchanged machine should not be restarted after applying settings'
 
+STATE_DIR="$TMPDIR/state-running-noop-resources"
+mkdir -p "$STATE_DIR"
+cat > "$MOCK_BIN/podman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="${STATE_DIR:?}"
+printf '%s\n' "$*" >> "$STATE_DIR/podman.log"
+case "$1" in
+  machine)
+    case "$2" in
+      inspect)
+        printf '[{"Name":"podman-machine-default","Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"State":"running","Rootful":false}]\n'
+        ;;
+      set)
+        if [[ "${3:-}" == --help ]]; then
+          printf '%s\n' '--cpus --memory --disk-size --rootful'
+          exit 0
+        fi
+        ;;
+      start|stop)
+        printf 'unexpected lifecycle action\n' >&2
+        exit 1
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  info)
+    printf '{}\n'
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$MOCK_BIN/podman"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out"
+assert_not_contains "$STATE_DIR/podman.log" 'machine stop podman-machine-default' 'running unchanged machine with resources inspect shape should not be stopped before applying settings'
+assert_not_contains "$STATE_DIR/podman.log" 'machine start podman-machine-default' 'running unchanged machine with resources inspect shape should not be restarted after applying settings'
+assert_not_contains "$STATE_DIR/podman.log" 'machine set --cpus 4 podman-machine-default' 'resources inspect shape should not trigger podman cpu updates when unchanged'
+assert_not_contains "$STATE_DIR/podman.log" 'machine set --memory 8192 podman-machine-default' 'resources inspect shape should not trigger podman memory updates when unchanged'
+assert_not_contains "$STATE_DIR/podman.log" 'machine set --disk-size 60 podman-machine-default' 'resources inspect shape should not trigger podman disk updates when unchanged'
+assert_not_contains "$STATE_DIR/out" 'cpus: unset -> 4' 'resources inspect shape should not report unset cpu drift when CPUs are present under Resources'
+assert_not_contains "$STATE_DIR/out" 'memory: unset -> 8192' 'resources inspect shape should not report unset memory drift when Memory is present under Resources'
+assert_not_contains "$STATE_DIR/out" 'disk_size: unset -> 60' 'resources inspect shape should not report unset disk drift when DiskSize is present under Resources'
+
 STATE_DIR="$TMPDIR/state-noop-start"
 mkdir -p "$STATE_DIR"
 cat > "$MOCK_BIN/podman" <<'EOF'
@@ -361,7 +405,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
+        printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -405,9 +449,9 @@ case "$1" in
     case "$2" in
       inspect)
         if [[ -f "$STATE_DIR/second-inspect" ]]; then
-          printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false,"LastUp":"later"}]\n'
+          printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false,"LastUp":"later"}]\n'
         else
-          printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false,"LastUp":"earlier"}]\n'
+          printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false,"LastUp":"earlier"}]\n'
           : > "$STATE_DIR/second-inspect"
         fi
         ;;
@@ -446,7 +490,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":true},"cpus":2}]\n'
+        printf '[{"State":{"Running":true},"Resources":{"CPUs":2,"DiskSize":40,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
@@ -487,9 +531,9 @@ case "$1" in
     case "$2" in
       inspect)
         if [[ -f "$STATE_DIR/after-update" ]]; then
-          printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":60,"rootful":false}]\n'
+          printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         else
-          printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":40,"rootful":false}]\n'
+          printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":40,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         fi
         ;;
       set)
@@ -529,7 +573,7 @@ case "$1" in
   machine)
     case "$2" in
       inspect)
-        printf '[{"State":{"Running":false},"cpus":4,"memory":8192,"diskSize":80,"rootful":false}]\n'
+        printf '[{"State":{"Running":false},"Resources":{"CPUs":4,"DiskSize":80,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
         ;;
       set)
         if [[ "${3:-}" == --help ]]; then
