@@ -20,6 +20,11 @@ cp "$ROOT/config/repo/shared.conf" "$REPO_DIR/config/repo/shared.conf"
 cp "$ROOT/config/podman/shared-macos.conf" "$REPO_DIR/config/podman/shared-macos.conf"
 chmod +x "$SCRIPT_FILE"
 
+cat > "$REPO_DIR/config/brew/shared-macos.Brewfile" <<'EOF'
+brew 'caddy'
+cask "ghostty"
+EOF
+
 git -C "$REPO_DIR" init -b main >/dev/null
 git -C "$REPO_DIR" config user.name 'Repo User'
 git -C "$REPO_DIR" config user.email 'repo.user@example.invalid'
@@ -32,6 +37,11 @@ git -C "$REPO_DIR" push -u origin main >/dev/null 2>&1
 cat > "$MOCK_BIN/uname" <<'EOF'
 #!/usr/bin/env bash
 printf 'Darwin\n'
+EOF
+
+cat > "$MOCK_BIN/scutil" <<'EOF'
+#!/usr/bin/env bash
+printf 'Maldoria\n'
 EOF
 
 cat > "$MOCK_BIN/xcode-select" <<'EOF'
@@ -88,8 +98,9 @@ exec "$HOST_PYTHON3" "\$@"
 EOF
 chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/xcode-select" "$MOCK_BIN/brew" "$MOCK_BIN/python3"
 cp "$MOCK_BIN/uname" "$NO_BREW_BIN/uname"
+cp "$MOCK_BIN/scutil" "$NO_BREW_BIN/scutil"
 cp "$MOCK_BIN/xcode-select" "$NO_BREW_BIN/xcode-select"
-chmod +x "$NO_BREW_BIN/uname" "$NO_BREW_BIN/xcode-select"
+chmod +x "$MOCK_BIN/scutil" "$NO_BREW_BIN/uname" "$NO_BREW_BIN/scutil" "$NO_BREW_BIN/xcode-select"
 
 STATE_DIR="$TMPDIR/state-dirty-repo"
 mkdir -p "$STATE_DIR"
@@ -144,6 +155,32 @@ if ! PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT
   exit 1
 fi
 assert_contains "$STATE_DIR/out" 'Homebrew already installed' 'brew-install reports existing brew installation'
+
+STATE_DIR="$TMPDIR/state-default-shared"
+mkdir -p "$STATE_DIR"
+touch "$STATE_DIR/clt.installed"
+PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"
+assert_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/shared-macos.Brewfile" 'brew-install processes the shared Brewfile by default'
+assert_contains "$STATE_DIR/brew.log" 'install caddy' 'brew-install installs missing shared formulae in default mode'
+assert_contains "$STATE_DIR/brew.log" 'install --cask ghostty' 'brew-install installs missing shared casks in default mode'
+
+HOST_BREWFILE="$REPO_DIR/config/brew/maldoria-macos.Brewfile"
+cat > "$HOST_BREWFILE" <<'EOF'
+brew "podman"
+EOF
+git -C "$REPO_DIR" add config/brew/maldoria-macos.Brewfile >/dev/null
+git -C "$REPO_DIR" commit -m 'Add host brewfile for install runtime test' >/dev/null
+git -C "$REPO_DIR" push >/dev/null 2>&1
+
+STATE_DIR="$TMPDIR/state-default-layered"
+mkdir -p "$STATE_DIR"
+touch "$STATE_DIR/clt.installed" "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty"
+PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"
+assert_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/shared-macos.Brewfile" 'brew-install still processes the shared Brewfile when a host-specific Brewfile exists'
+assert_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/maldoria-macos.Brewfile" 'brew-install processes the host-specific Brewfile when present'
+assert_contains "$STATE_DIR/brew.log" 'install podman' 'brew-install installs missing host-specific formulae in default mode'
+assert_not_contains "$STATE_DIR/brew.log" 'install caddy' 'brew-install skips already installed shared formulae in default mode'
+assert_not_contains "$STATE_DIR/brew.log" 'install --cask ghostty' 'brew-install skips already installed shared casks in default mode'
 
 STATE_DIR="$TMPDIR/state-install"
 mkdir -p "$STATE_DIR"

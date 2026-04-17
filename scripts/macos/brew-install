@@ -38,77 +38,36 @@ cleanup() {
 
 trap cleanup EXIT
 
-snapshot_brewfile_state() {
-  local output_file="$1"
-  local entry_type
-  local entry_name
-  local version_line
+install_missing_brew_entry() {
+  local entry_type="$1"
+  local entry_name="$2"
 
-  : > "$output_file"
-
-  while IFS='|' read -r entry_type entry_name; do
-    version_line=""
-
-    if [[ "$entry_type" == "brew" ]]; then
-      version_line="$(brew list --versions "$entry_name" 2>/dev/null || true)"
-    else
-      version_line="$(brew list --cask --versions "$entry_name" 2>/dev/null || true)"
+  if [[ "$entry_type" == "brew" ]]; then
+    if ! brew list --versions "$entry_name" >/dev/null 2>&1; then
+      brew install "$entry_name"
     fi
-
-    if [[ -n "$version_line" ]]; then
-      printf '%s|%s|installed|%s\n' "$entry_type" "$entry_name" "$version_line" >> "$output_file"
-    else
-      printf '%s|%s|missing|\n' "$entry_type" "$entry_name" >> "$output_file"
+  elif [[ "$entry_type" == "cask" ]]; then
+    if ! brew list --cask --versions "$entry_name" >/dev/null 2>&1; then
+      brew install --cask "$entry_name"
     fi
-  done < "$ENTRIES_FILE"
+  else
+    fail "Unsupported Brewfile entry type: $entry_type"
+  fi
 }
 
 process_brewfile() {
   local brewfile_path="$1"
-  local entry_type
-  local entry_name
 
   echo "==> Checking Brewfile: $brewfile_path"
-  [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
 
-  parse_brewfile_entries "$brewfile_path" > "$ENTRIES_FILE"
-  snapshot_brewfile_state "$BEFORE_FILE"
+  write_brewfile_entries "$brewfile_path" "$ENTRIES_FILE"
+  snapshot_brew_entries_state "$ENTRIES_FILE" "$BEFORE_FILE"
 
   echo "==> Installing missing Brewfile entries"
-  while IFS='|' read -r entry_type entry_name; do
-    [[ -n "$entry_name" ]] || continue
+  for_each_brew_entry "$ENTRIES_FILE" install_missing_brew_entry
 
-    if [[ "$entry_type" == "brew" ]]; then
-      if ! brew list --versions "$entry_name" >/dev/null 2>&1; then
-        brew install "$entry_name"
-      fi
-    else
-      if ! brew list --cask --versions "$entry_name" >/dev/null 2>&1; then
-        brew install --cask "$entry_name"
-      fi
-    fi
-  done < "$ENTRIES_FILE"
-
-  snapshot_brewfile_state "$AFTER_FILE"
-  "$PYTHON3_COMMAND" - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
-from pathlib import Path
-import sys
-
-def read_state(path):
-    rows = {}
-    for line in Path(path).read_text().splitlines():
-        entry_type, name, state, version = line.split("|", 3)
-        rows[(entry_type, name)] = {"state": state, "version": version}
-    return rows
-
-before = read_state(sys.argv[1])
-after = read_state(sys.argv[2])
-
-for (entry_type, name), after_data in after.items():
-    before_data = before[(entry_type, name)]
-    if before_data["state"] == "missing" and after_data["state"] == "installed":
-        print(f"{entry_type}|{name}|Installed")
-PY
+  snapshot_brew_entries_state "$ENTRIES_FILE" "$AFTER_FILE"
+  report_brew_install_state_changes "$BEFORE_FILE" "$AFTER_FILE" "$PYTHON3_COMMAND" > "$CHANGES_FILE"
 
   while IFS='|' read -r entry_type entry_name change_name; do
     [[ -n "$entry_name" ]] || continue
@@ -152,14 +111,9 @@ AFTER_FILE="$(mktemp)"
 CHANGES_FILE="$(mktemp)"
 
 if [[ -n "$BREWFILE_OVERRIDE" ]]; then
-  process_brewfile "$BREWFILE_OVERRIDE"
+  for_each_managed_brewfile process_brewfile "$BREWFILE_OVERRIDE"
 else
-  process_brewfile "$(shared_platform_config_path "config/brew" "Brewfile")"
-
-  BREWFILE_OVERRIDE="$(host_platform_config_path "config/brew" "Brewfile")"
-  if [[ -f "$BREWFILE_OVERRIDE" ]]; then
-    process_brewfile "$BREWFILE_OVERRIDE"
-  fi
+  for_each_managed_brewfile process_brewfile
 fi
 
 echo "==> Homebrew and missing Brewfile entries are installed"

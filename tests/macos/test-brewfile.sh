@@ -6,7 +6,6 @@ test -f "$BREWFILE"
 grep -q 'brew "podman"' "$BREWFILE"
 grep -q 'brew "podman-compose"' "$BREWFILE"
 grep -q 'cask "podman-desktop"' "$BREWFILE"
-grep -q '^  process_brewfile "\$(shared_platform_config_path "config/brew" "Brewfile")"$' "$ROOT/scripts/macos/brew-install"
 python3 - "$BREWFILE" <<'PY'
 from pathlib import Path
 import sys
