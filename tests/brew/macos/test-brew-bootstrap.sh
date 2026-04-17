@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+SCRIPT_FILE="$ROOT/scripts/brew/macos/brew-bootstrap"
+CONFIG_FILE="$ROOT/config/brew/macos/brew-settings-shared.conf"
+test -f "$SCRIPT_FILE"
+test -f "$CONFIG_FILE"
+grep -q '^source "\$SCRIPT_DIR/../../../lib/shell/shared/common.sh"$' "$SCRIPT_FILE"
+grep -q '^require_macos$' "$SCRIPT_FILE"
+grep -q '^BREW_BOOTSTRAP_STEPS=($' "$CONFIG_FILE"
+grep -q '^  "brew-install"$' "$CONFIG_FILE"
+grep -q '^  "brew-upgrade"$' "$CONFIG_FILE"
+grep -q '^  "brew-configure"$' "$CONFIG_FILE"
+grep -q 'preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf"' "$SCRIPT_FILE"
+grep -q 'resolve_brew_workflow_script_path' "$SCRIPT_FILE"
+grep -q 'resolve_brew_workflow_script_path "brew-service"' "$SCRIPT_FILE"
+echo "Brew bootstrap checks passed"

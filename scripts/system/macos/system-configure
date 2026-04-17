@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
+
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0")
+
+Apply the managed macOS system settings.
+
+Notes:
+  - Loads the matching host-specific config when present, otherwise the shared fallback.
+  - Requires sudo for the managed pmset change."
+fi
+
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
+SHARED_SYSTEM_CONFIG="$(shared_platform_config_path "config/system" "system-settings" "conf")"
+SYSTEM_CONFIG="$(preferred_platform_config_path "config/system" "system-settings" "conf")"
+DOCK_AUTO_HIDE=""
+DOCK_REORDER_SPACES_BY_RECENT_USE=""
+AC_POWER_SYSTEM_SLEEP_MINUTES=""
+DOCK_CHANGED="0"
+SYSTEM_DOCK_DOMAIN=""
+SYSTEM_DOCK_AUTO_HIDE_KEY=""
+SYSTEM_DOCK_REORDER_SPACES_KEY=""
+
+load_system_config() {
+  [[ -f "$SYSTEM_CONFIG" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$SYSTEM_CONFIG"
+}
+
+bool_to_defaults_value() {
+  case "$1" in
+    true) printf '%s\n' 'true' ;;
+    false) printf '%s\n' 'false' ;;
+    *) fail "Invalid boolean value: $1" ;;
+  esac
+}
+
+normalize_defaults_bool_value() {
+  case "$1" in
+    1|true) printf '%s\n' 'true' ;;
+    0|false) printf '%s\n' 'false' ;;
+    *) fail "Invalid defaults boolean value: $1" ;;
+  esac
+}
+
+set_dock_bool() {
+  local key_name="$1"
+  local desired_value="$2"
+  local item_name="$3"
+  local current_value=""
+
+  current_value="$(defaults read "$SYSTEM_DOCK_DOMAIN" "$key_name" 2>/dev/null || printf '0')"
+  current_value="$(normalize_defaults_bool_value "$current_value")"
+  desired_value="$(bool_to_defaults_value "$desired_value")"
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  defaults write "$SYSTEM_DOCK_DOMAIN" "$key_name" -bool "$desired_value"
+  DOCK_CHANGED="1"
+}
+
+apply_dock_settings() {
+  set_dock_bool "$SYSTEM_DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" "Dock auto-hide"
+  set_dock_bool "$SYSTEM_DOCK_REORDER_SPACES_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" "Dock recent-spaces reordering"
+}
+
+mac_is_portable() {
+  pmset -g batt 2>/dev/null | grep -q 'InternalBattery'
+}
+
+current_pmset_sleep_setting() {
+  local power_section="$1"
+
+  pmset -g custom | awk -v section="$power_section" '
+    $0 == section":" { in_section = 1; next }
+    /^[A-Za-z].*:$/ { in_section = 0 }
+    in_section && $1 == "sleep" { print $2; exit }
+  '
+}
+
+apply_pmset_sleep() {
+  local desired_value="$1"
+  local scope_flag="$SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE"
+  local power_section="$SYSTEM_PMSET_AC_POWER_SECTION"
+  local current_value=""
+
+  if mac_is_portable; then
+    scope_flag="$SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE"
+  fi
+
+  current_value="$(current_pmset_sleep_setting "$power_section" || true)"
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  sudo -v
+  sudo pmset "$scope_flag" sleep "$desired_value"
+}
+
+require_macos
+require_clt
+require_command defaults
+require_command grep
+require_command pmset
+require_command sudo
+
+echo "==> Loading managed macOS system config"
+[[ -f "$SHARED_SYSTEM_CONFIG" ]] || fail "Managed macOS system config not found: $SHARED_SYSTEM_CONFIG"
+load_system_config
+
+[[ -n "$DOCK_AUTO_HIDE" ]] || fail "DOCK_AUTO_HIDE is not set in the managed macOS system config"
+[[ -n "$DOCK_REORDER_SPACES_BY_RECENT_USE" ]] || fail "DOCK_REORDER_SPACES_BY_RECENT_USE is not set in the managed macOS system config"
+[[ -n "$AC_POWER_SYSTEM_SLEEP_MINUTES" ]] || fail "AC_POWER_SYSTEM_SLEEP_MINUTES is not set in the managed macOS system config"
+[[ -n "$SYSTEM_DOCK_DOMAIN" ]] || fail "SYSTEM_DOCK_DOMAIN is not set in the managed macOS system config"
+[[ -n "$SYSTEM_DOCK_AUTO_HIDE_KEY" ]] || fail "SYSTEM_DOCK_AUTO_HIDE_KEY is not set in the managed macOS system config"
+[[ -n "$SYSTEM_DOCK_REORDER_SPACES_KEY" ]] || fail "SYSTEM_DOCK_REORDER_SPACES_KEY is not set in the managed macOS system config"
+[[ -n "$SYSTEM_PMSET_AC_POWER_SECTION" ]] || fail "SYSTEM_PMSET_AC_POWER_SECTION is not set in the managed macOS system config"
+[[ -n "$SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE" ]] || fail "SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config"
+[[ -n "$SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE" ]] || fail "SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config"
+
+echo "==> Applying Dock settings"
+apply_dock_settings
+
+if [[ "$DOCK_CHANGED" == "1" ]]; then
+  killall Dock >/dev/null 2>&1 || true
+fi
+
+echo "==> Applying power settings"
+apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+
+echo "==> macOS system settings are ready"
