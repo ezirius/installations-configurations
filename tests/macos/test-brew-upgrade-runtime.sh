@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HELPERS="$ROOT/lib/test/runtime-helpers.sh"
+HELPERS="$ROOT/tests/lib/runtime-helpers.sh"
 TMPDIR="$(mktemp -d)"
 REPO_DIR="$TMPDIR/repo"
 MOCK_BIN="$TMPDIR/bin"
