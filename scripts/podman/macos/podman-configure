@@ -49,10 +49,16 @@ CURRENT_MACHINE_ROOTFUL=""
 MACHINE_SETTINGS_TO_APPLY=()
 MACHINE_SETTINGS_DIFF_LINES=()
 MACHINE_RECONCILIATION_BYPASSED="0"
+TEMP_MACHINE_CONFIG=""
+
+cleanup() {
+  rm -f "$TEMP_MACHINE_CONFIG"
+}
+
+trap cleanup EXIT
 
 load_podman_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/podman" "macos" "podman-runtime-settings" "conf")"
-  CONTAINERS_CONF_SOURCE="$(preferred_scoped_config_path "config/podman" "macos" "podman-machine-settings" "conf")"
+  source_layered_scoped_config "config/podman" "macos" "podman-runtime-settings" "conf"
   CONTAINERS_CONF_TARGET="$HOME/$PODMAN_TARGET_RELATIVE_PATH"
   MACHINE_NAME="${1:-$PODMAN_MACHINE_NAME_DEFAULT}"
   MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH/${MACHINE_NAME}"
@@ -60,6 +66,94 @@ load_podman_config() {
   case "$PODMAN_DISK_SIZE_UPDATE_POLICY" in
     grow-only|always) ;;
     *) fail "Unsupported Podman disk-size update policy: $PODMAN_DISK_SIZE_UPDATE_POLICY" ;;
+  esac
+}
+
+validate_podman_runtime_config() {
+  [[ -n "${PODMAN_TARGET_RELATIVE_PATH-}" ]] || fail "PODMAN_TARGET_RELATIVE_PATH is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_MACHINE_NAME_DEFAULT-}" ]] || fail "PODMAN_MACHINE_NAME_DEFAULT is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_MACHINE_STORAGE_RELATIVE_PATH-}" ]] || fail "PODMAN_MACHINE_STORAGE_RELATIVE_PATH is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_RECONCILE_EXISTING_MACHINE-}" ]] || fail "PODMAN_RECONCILE_EXISTING_MACHINE is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_REQUIRE_RECONCILIATION_APPROVAL-}" ]] || fail "PODMAN_REQUIRE_RECONCILIATION_APPROVAL is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_START_MACHINE_ON_CREATE-}" ]] || fail "PODMAN_START_MACHINE_ON_CREATE is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_START_MACHINE_FOR_VERIFICATION-}" ]] || fail "PODMAN_START_MACHINE_FOR_VERIFICATION is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_VERIFY_INFO_AFTER_RECONCILIATION-}" ]] || fail "PODMAN_VERIFY_INFO_AFTER_RECONCILIATION is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_DISK_SIZE_UPDATE_POLICY-}" ]] || fail "PODMAN_DISK_SIZE_UPDATE_POLICY is not set in the managed Podman runtime config"
+}
+
+compose_machine_config() {
+  local shared_config
+  local host_config
+  local wrote_config="0"
+  local shared_value
+  local host_value
+  local final_value
+  local key
+
+  shared_config="$(shared_scoped_config_path "config/podman" "macos" "podman-machine-settings" "conf")"
+  host_config="$(host_scoped_config_path "config/podman" "macos" "podman-machine-settings" "conf")"
+
+  [[ -f "$shared_config" || -f "$host_config" ]] || return 0
+
+  TEMP_MACHINE_CONFIG="$(mktemp)"
+  printf '[machine]\n' > "$TEMP_MACHINE_CONFIG"
+
+  for key in cpus memory disk_size rootful; do
+    shared_value=""
+    host_value=""
+    final_value=""
+
+    if [[ -f "$shared_config" ]]; then
+      shared_value="$(read_machine_config_value "$shared_config" "$key" || true)"
+    fi
+
+    if [[ -f "$host_config" ]]; then
+      host_value="$(read_machine_config_value "$host_config" "$key" || true)"
+    fi
+
+    final_value="$shared_value"
+    if [[ -n "$host_value" ]]; then
+      final_value="$host_value"
+    fi
+
+    if [[ -n "$final_value" ]]; then
+      printf '%s=%s\n' "$key" "$final_value" >> "$TEMP_MACHINE_CONFIG"
+      wrote_config="1"
+    fi
+  done
+
+  if [[ "$wrote_config" != "1" ]]; then
+    rm -f "$TEMP_MACHINE_CONFIG"
+    TEMP_MACHINE_CONFIG=""
+  fi
+}
+
+read_required_machine_value() {
+  local key="$1"
+  local value=""
+
+  if [[ -n "$TEMP_MACHINE_CONFIG" ]]; then
+    value="$(read_machine_config_value "$TEMP_MACHINE_CONFIG" "$key" || true)"
+  fi
+
+  [[ -n "$value" ]] || fail "$key is not set in the managed Podman machine config"
+  printf '%s\n' "$value"
+}
+
+validate_positive_integer() {
+  local key="$1"
+  local value="$2"
+
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$key must be a positive integer in the managed Podman machine config"
+}
+
+validate_boolean_setting() {
+  local key="$1"
+  local value="$2"
+
+  case "$value" in
+    true|false) ;;
+    *) fail "$key must be true or false in the managed Podman machine config" ;;
   esac
 }
 
@@ -361,6 +455,8 @@ require_command cmp
 initialize_change_log "scripts/podman/macos/podman-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
 load_podman_config "$@"
+validate_podman_runtime_config
+compose_machine_config
 load_machine_set_help
 
 echo "==> Checking podman"
@@ -369,21 +465,25 @@ if ! command -v podman >/dev/null 2>&1; then
 fi
 
 echo "==> Checking source containers.conf"
-if [[ ! -f "$CONTAINERS_CONF_SOURCE" ]]; then
-  fail "Missing source config: $CONTAINERS_CONF_SOURCE"
+if [[ -z "$TEMP_MACHINE_CONFIG" ]]; then
+  fail "No managed Podman machine config was found for the shared or matching host-specific scope"
 fi
 
 echo "==> Reading machine settings from containers.conf"
-MACHINE_CPUS="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" cpus)"
-MACHINE_MEMORY="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" memory)"
-MACHINE_DISK_SIZE="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" disk_size)"
-MACHINE_ROOTFUL="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" rootful)"
+MACHINE_CPUS="$(read_required_machine_value cpus)"
+MACHINE_MEMORY="$(read_required_machine_value memory)"
+MACHINE_DISK_SIZE="$(read_required_machine_value disk_size)"
+MACHINE_ROOTFUL="$(read_required_machine_value rootful)"
+validate_positive_integer cpus "$MACHINE_CPUS"
+validate_positive_integer memory "$MACHINE_MEMORY"
+validate_positive_integer disk_size "$MACHINE_DISK_SIZE"
+validate_boolean_setting rootful "$MACHINE_ROOTFUL"
 populate_machine_init_args
 
 echo "==> Deploying containers.conf"
 mkdir -p "$(dirname "$CONTAINERS_CONF_TARGET")"
-if [[ ! -f "$CONTAINERS_CONF_TARGET" ]] || ! cmp -s "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"; then
-  cp "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"
+if [[ ! -f "$CONTAINERS_CONF_TARGET" ]] || ! cmp -s "$TEMP_MACHINE_CONFIG" "$CONTAINERS_CONF_TARGET"; then
+  cp "$TEMP_MACHINE_CONFIG" "$CONTAINERS_CONF_TARGET"
   log_change "Configuration" "containers.conf" "Copied" "$CONTAINERS_CONF_TARGET" "Copied Podman machine settings from repository"
 fi
 

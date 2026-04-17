@@ -10,6 +10,13 @@ source_shell_config() {
   source "$config_path"
 }
 
+source_optional_shell_config() {
+  local config_path="$1"
+  [[ -f "$config_path" ]] || return 0
+  # shellcheck disable=SC1090
+  source "$config_path"
+}
+
 load_repo_config() {
   local config_path
 
@@ -121,6 +128,49 @@ host_platform_config_path() {
 
   load_repo_config
   printf "$REPO_HOST_PLATFORM_PATTERN\n" "$(repo_root)" "$relative_dir" "$(platform_key)" "$filejob" "$(normalized_host_name)" "$extension"
+}
+
+shared_scoped_config_path() {
+  local relative_dir="$1"
+  local scope="$2"
+  local filejob="$3"
+  local extension="$4"
+
+  load_repo_config
+  printf "$REPO_SHARED_PLATFORM_PATTERN\n" "$(repo_root)" "$relative_dir" "$scope" "$filejob" "$extension"
+}
+
+host_scoped_config_path() {
+  local relative_dir="$1"
+  local scope="$2"
+  local filejob="$3"
+  local extension="$4"
+
+  load_repo_config
+  printf "$REPO_HOST_PLATFORM_PATTERN\n" "$(repo_root)" "$relative_dir" "$scope" "$filejob" "$(normalized_host_name)" "$extension"
+}
+
+source_layered_scoped_config() {
+  local relative_dir="$1"
+  local scope="$2"
+  local filejob="$3"
+  local extension="$4"
+  local shared_config
+  local host_config
+
+  shared_config="$(shared_scoped_config_path "$relative_dir" "$scope" "$filejob" "$extension")"
+  host_config="$(host_scoped_config_path "$relative_dir" "$scope" "$filejob" "$extension")"
+
+  source_optional_shell_config "$shared_config"
+  source_optional_shell_config "$host_config"
+}
+
+source_layered_platform_config() {
+  local relative_dir="$1"
+  local filejob="$2"
+  local extension="$3"
+
+  source_layered_scoped_config "$relative_dir" "$(platform_key)" "$filejob" "$extension"
 }
 
 preferred_scoped_config_path() {

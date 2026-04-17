@@ -43,26 +43,33 @@ The shared macOS Brewfile installs the managed package set for this repository: 
 
 ## Config selection
 
-This repository uses host fallback only: when a matching host-specific file exists, it is used; otherwise the shared file is used.
+This repository uses layered shared and host-specific config.
+
+For every managed config family:
+
+1. The shared file is installed or loaded first when it exists.
+2. The matching host-specific file is installed or loaded after it when it exists.
+3. Host matching uses the machine hostname up to, but not including, the first `.`.
+4. Either file may be absent.
 
 - Brewfiles:
   - shared: `config/brew/macos/brew-packages-shared.Brewfile`
   - host-specific: `config/brew/macos/brew-packages-<host>.Brewfile`
-In the current repository state, a host-specific Brewfile is optional and replaces the shared Brewfile when present.
+In the current repository state, the shared Brewfile is used when it exists, and the matching host-specific Brewfile is applied after it when it exists.
 
 `scripts/brew/macos/brew-install` first checks for Xcode Command Line Tools and triggers `xcode-select --install` if they are missing, then stops until that installation is complete. After that, it checks for an existing Homebrew installation, stops with a manual-install message when Homebrew is missing, and then installs only missing entries from the selected Brewfile using the normal host-fallback rules. `scripts/brew/macos/brew-install` and `scripts/brew/macos/brew-upgrade` also require this repository to have at least one commit and a clean checkout before they run. This repository does not execute the upstream moving installer script automatically because that path is not checksum-verifiable in this workflow.
 
-`caddy` is managed through `config/caddy/macos/caddy-runtime-shared.Caddyfile` and Homebrew's background service integration.
+`caddy` is managed through the shared and matching host-specific files under `config/caddy/macos/` together with Homebrew's background service integration.
 
 The normal Caddy change workflow is:
 
-1. Edit `config/caddy/macos/caddy-runtime-shared.Caddyfile`
+1. Edit `config/caddy/macos/caddy-runtime-shared.Caddyfile` and `config/caddy/macos/caddy-runtime-<host>.Caddyfile` as needed
 2. Run `scripts/caddy/macos/caddy-configure`
 3. Run `scripts/caddy/macos/caddy-service reload`
 
 For local HTTPS trust, run `scripts/caddy/macos/caddy-trust` after `scripts/caddy/macos/caddy-configure` has deployed the managed Caddyfile for `https://127.0.0.1:8123`. In the default workflow this already happens inside `scripts/brew/macos/brew-configure`.
 
-`scripts/brew/macos/brew-configure` is the post-install umbrella command for the current Brew workflow. It runs the configured wrapper steps from `config/brew/macos/brew-settings-shared.conf`, which currently are:
+`scripts/brew/macos/brew-configure` is the post-install umbrella command for the current Brew workflow. It loads `config/brew/macos/brew-settings-shared.conf` first when it exists, then `config/brew/macos/brew-settings-<host>.conf` when it exists. The current shared defaults are:
 
 1. `scripts/caddy/macos/caddy-configure`
 2. `scripts/caddy/macos/caddy-trust`

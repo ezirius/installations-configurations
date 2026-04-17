@@ -50,8 +50,11 @@ BREW_MANAGED_SERVICE_SCRIPTS=(
   "second-service"
 )
 EOF
+cat > "$REPO_DIR/config/brew/macos/brew-settings-maldoria.conf" <<'EOF'
+BREW_BOOTSTRAP_SERVICE_ACTION="restart"
+EOF
 
-for step in first-service second-service; do
+for step in first-service second-service host-service; do
   cat > "$REPO_DIR/scripts/brew/macos/$step" <<EOF
 #!/usr/bin/env bash
 printf '%s %s\n' '$step' "\$1" >> "$STATE_DIR/services.log"
@@ -63,7 +66,7 @@ PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" restart >/dev/null
 EXPECTED=$'first-service restart\nsecond-service restart'
 ACTUAL="$(cat "$STATE_DIR/services.log")"
 if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-  printf 'assertion failed: brew-service should dispatch the selected action in config order\nexpected:\n%s\nactual:\n%s\n' "$EXPECTED" "$ACTUAL" >&2
+  printf 'assertion failed: brew-service should inherit shared managed services when the matching host config omits them\nexpected:\n%s\nactual:\n%s\n' "$EXPECTED" "$ACTUAL" >&2
   exit 1
 fi
 
@@ -83,5 +86,19 @@ if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" invalid >/dev/null 2>"
   exit 1
 fi
 assert_contains "$STATE_DIR/invalid.err" 'takes exactly 1 argument' 'brew-service reports invalid action usage clearly'
+
+rm -f "$REPO_DIR/config/brew/macos/brew-settings-shared.conf"
+cat > "$REPO_DIR/config/brew/macos/brew-settings-maldoria.conf" <<'EOF'
+BREW_MANAGED_SERVICE_SCRIPTS=(
+  "host-service"
+)
+EOF
+: > "$STATE_DIR/services.log"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" status >/dev/null
+ACTUAL="$(cat "$STATE_DIR/services.log")"
+if [[ "$ACTUAL" != $'host-service status' ]]; then
+  printf 'assertion failed: brew-service should work with a matching host-specific workflow config only\nactual:\n%s\n' "$ACTUAL" >&2
+  exit 1
+fi
 
 echo "Brew service runtime checks passed"

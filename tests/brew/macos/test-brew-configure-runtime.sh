@@ -49,8 +49,11 @@ BREW_MANAGED_SERVICE_SCRIPTS=(
   "caddy-service"
 )
 EOF
+cat > "$REPO_DIR/config/brew/macos/brew-settings-maldoria.conf" <<'EOF'
+BREW_BOOTSTRAP_SERVICE_ACTION="restart"
+EOF
 
-for step in first-step second-step third-step; do
+for step in first-step second-step third-step host-step; do
   cat > "$REPO_DIR/scripts/brew/macos/$step" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' '$step' >> "$STATE_DIR/steps.log"
@@ -62,7 +65,7 @@ PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" >/dev/null
 EXPECTED=$'first-step\nsecond-step\nthird-step'
 ACTUAL="$(cat "$STATE_DIR/steps.log")"
 if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-  printf 'assertion failed: brew-configure should run configured steps in order\nexpected:\n%s\nactual:\n%s\n' "$EXPECTED" "$ACTUAL" >&2
+  printf 'assertion failed: brew-configure should inherit shared workflow steps when the matching host config omits them\nexpected:\n%s\nactual:\n%s\n' "$EXPECTED" "$ACTUAL" >&2
   exit 1
 fi
 
@@ -77,5 +80,19 @@ if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" >/dev/null 2>"$STATE_D
   exit 1
 fi
 assert_not_contains "$STATE_DIR/fail.log" 'third-step' 'brew-configure stops before later steps after a failure'
+
+rm -f "$REPO_DIR/config/brew/macos/brew-settings-shared.conf"
+cat > "$REPO_DIR/config/brew/macos/brew-settings-maldoria.conf" <<'EOF'
+BREW_CONFIGURE_STEPS=(
+  "host-step"
+)
+EOF
+: > "$STATE_DIR/steps.log"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" >/dev/null
+ACTUAL="$(cat "$STATE_DIR/steps.log")"
+if [[ "$ACTUAL" != $'host-step' ]]; then
+  printf 'assertion failed: brew-configure should work with a matching host-specific config only\nactual:\n%s\n' "$ACTUAL" >&2
+  exit 1
+fi
 
 echo "Brew configure runtime checks passed"

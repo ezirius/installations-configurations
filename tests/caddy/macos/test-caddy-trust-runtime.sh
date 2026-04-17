@@ -100,19 +100,9 @@ PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" >/dev/null
 
 assert_contains "$STATE_DIR/caddy.log" 'trust --config' 'caddy trust uses the managed Caddyfile path'
 
-COUNT_BEFORE=$(python3 - "$STATE_DIR/caddy.log" <<'PY'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).read_text().count('trust --config'))
-PY
-)
+COUNT_BEFORE=$(grep -o 'trust --config' "$STATE_DIR/caddy.log" | wc -l | tr -d ' ')
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" >/dev/null
-COUNT_AFTER=$(python3 - "$STATE_DIR/caddy.log" <<'PY'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).read_text().count('trust --config'))
-PY
-)
+COUNT_AFTER=$(grep -o 'trust --config' "$STATE_DIR/caddy.log" | wc -l | tr -d ' ')
 if [[ "$COUNT_AFTER" -le "$COUNT_BEFORE" ]]; then
   printf 'assertion failed: caddy-trust should re-run caddy trust to avoid stale certificate-name false positives\n' >&2
   exit 1

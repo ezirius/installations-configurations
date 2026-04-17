@@ -5,7 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
 
 load_brew_workflow_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf")"
+  source_layered_scoped_config "config/brew" "macos" "brew-settings" "conf"
+}
+
+validate_brew_workflow_config() {
+  [[ -n "${BREW_BOOTSTRAP_STEPS+set}" ]] || fail "BREW_BOOTSTRAP_STEPS is not set in the managed Brew workflow config"
+  [[ -n "${BREW_BOOTSTRAP_SERVICE_ACTION-}" ]] || fail "BREW_BOOTSTRAP_SERVICE_ACTION is not set in the managed Brew workflow config"
 }
 
 format_brew_array_lines() {
@@ -35,6 +40,7 @@ fi
 
 require_macos
 load_brew_workflow_config
+validate_brew_workflow_config
 
 echo "==> Running macOS brew bootstrap"
 for step in "${BREW_BOOTSTRAP_STEPS[@]}"; do

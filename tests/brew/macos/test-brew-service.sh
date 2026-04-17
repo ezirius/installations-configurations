@@ -13,6 +13,6 @@ grep -q '^  start\|stop\|restart\|reload\|status' "$SCRIPT_FILE"
 grep -q '^BREW_MANAGED_SERVICE_SCRIPTS=($' "$CONFIG_FILE"
 grep -q '^  "caddy-service"$' "$CONFIG_FILE"
 grep -q 'resolve_brew_workflow_script_path' "$SCRIPT_FILE"
-grep -q 'preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf"' "$SCRIPT_FILE"
+grep -q 'source_layered_scoped_config "config/brew" "macos" "brew-settings" "conf"' "$SCRIPT_FILE"
 
 echo "Brew service checks passed"

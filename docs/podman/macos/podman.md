@@ -17,14 +17,18 @@ The shared macOS Brewfile manages the Podman package set for this repository:
 The Podman machine defaults live in:
 
 - `config/podman/macos/podman-machine-settings-shared.conf`
+- `config/podman/macos/podman-machine-settings-<host>.conf`
 
-If `config/podman/macos/podman-machine-settings-<host>.conf` exists for the current Mac, `scripts/podman/macos/podman-configure` prefers that host-specific file and otherwise falls back to the shared one.
+`scripts/podman/macos/podman-configure` applies the shared machine settings first when they exist and then applies the matching host-specific machine settings when they exist. Host matching uses the machine hostname up to, but not including, the first `.`. Either file may be absent.
 
 The managed machine name and diagnose defaults live in:
 
 - `config/podman/macos/podman-runtime-settings-shared.conf`
+- `config/podman/macos/podman-runtime-settings-<host>.conf`
 
-`scripts/podman/macos/podman-configure` copies the selected machine settings into:
+The runtime settings use the same layered rule: shared first when present, then matching host-specific overrides when present.
+
+`scripts/podman/macos/podman-configure` writes the merged machine settings into:
 
 - `~/.config/containers/containers.conf`
 
@@ -44,7 +48,7 @@ The current shared defaults are simple baseline values:
 `scripts/podman/macos/podman-configure`:
 
 1. validates that `podman` and the managed config source are available
-2. resolves `config/podman/macos/podman-machine-settings-<host>.conf` first and otherwise falls back to `config/podman/macos/podman-machine-settings-shared.conf`, then copies the selected file into `~/.config/containers/containers.conf`
+2. merges `config/podman/macos/podman-machine-settings-shared.conf` and `config/podman/macos/podman-machine-settings-<host>.conf` when they exist, then writes the merged file into `~/.config/containers/containers.conf`
 3. creates the managed machine if it does not yet exist
 4. computes the per-setting drift between the existing machine and the selected managed machine-settings file
 5. asks for approval before applying managed setting changes to an existing machine

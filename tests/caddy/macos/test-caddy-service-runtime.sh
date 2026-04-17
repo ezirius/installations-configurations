@@ -121,7 +121,11 @@ fi
 assert_contains "$STATE_DIR/reload.err" 'Caddy service is not running' 'reload reports a clear error when the service is stopped'
 assert_contains "$STATE_DIR/caddy.log" 'validate --config' 'caddy-service validates the runtime config before managing the service'
 
-PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" start >/dev/null
+if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" start >"$STATE_DIR/not-started.out" 2>"$STATE_DIR/not-started.err"; then
+  printf 'assertion failed: caddy-service start should fail when brew services start succeeds but the service never reaches started state\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/not-started.err" 'failed to start' 'caddy-service reports a clear error when brew services start does not actually start Caddy'
 
 cat > "$MOCK_BIN/brew" <<EOF
 #!/usr/bin/env bash
@@ -155,12 +159,7 @@ assert_contains "$STATE_DIR/brew.log" 'services stop caddy' 'caddy service stop 
 assert_contains "$STATE_DIR/brew.log" 'services restart caddy' 'caddy service restart uses brew services restart'
 assert_contains "$STATE_DIR/brew.log" 'services info caddy' 'caddy service status uses brew services info'
 assert_contains "$STATE_DIR/caddy.log" 'reload --config' 'caddy reload uses managed config path'
-START_COUNT=$(python3 - "$STATE_DIR/brew.log" <<'PY'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).read_text().count('services start caddy'))
-PY
-)
+START_COUNT=$(grep -o 'services start caddy' "$STATE_DIR/brew.log" | wc -l | tr -d ' ')
 if [[ "$START_COUNT" != "1" ]]; then
   printf 'assertion failed: caddy-service start should call brew services start only once across the test\n' >&2
   exit 1

@@ -8,11 +8,14 @@ Scope: `macos/` means this page is only for the macOS workflow.
 
 ## Managed config model
 
-This repo manages `caddy` with one shared macOS Caddyfile and the Homebrew service.
+This repo manages `caddy` with layered shared and matching host-specific config plus the Homebrew service.
 
 The managed source of truth lives in:
 
 - `config/caddy/macos/caddy-runtime-shared.Caddyfile`
+- `config/caddy/macos/caddy-runtime-<host>.Caddyfile`
+
+When `scripts/caddy/macos/caddy-configure` runs, it renders the shared Caddyfile first when it exists and then appends the matching host-specific Caddyfile when it exists. Host matching uses the machine hostname up to, but not including, the first `.`. Either file may be absent.
 
 The deployed runtime config lives in Homebrew's expected service path:
 
@@ -20,9 +23,15 @@ The deployed runtime config lives in Homebrew's expected service path:
 
 ## Managed reverse proxy
 
-`scripts/caddy/macos/caddy-configure` deploys the managed macOS Caddyfile from:
+`scripts/caddy/macos/caddy-configure` loads settings from:
+
+- `config/caddy/macos/caddy-settings-shared.conf`
+- `config/caddy/macos/caddy-settings-<host>.conf`
+
+It then deploys the managed macOS Caddyfile from:
 
 - `config/caddy/macos/caddy-runtime-shared.Caddyfile`
+- `config/caddy/macos/caddy-runtime-<host>.Caddyfile`
 
 You also need `python3` available before running the managed setup scripts because the config-deployment path uses it before any Brewfile-managed packages are installed.
 
@@ -70,7 +79,7 @@ That uses:
 
 When you need to change the reverse proxy config:
 
-1. Edit `config/caddy/macos/caddy-runtime-shared.Caddyfile`
+1. Edit `config/caddy/macos/caddy-runtime-shared.Caddyfile` and `config/caddy/macos/caddy-runtime-<host>.Caddyfile` as needed
 2. Run `scripts/caddy/macos/caddy-configure`
 3. Run `scripts/brew/macos/brew-service reload`
 
