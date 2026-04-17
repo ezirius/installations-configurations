@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT_FILE="$ROOT/scripts/macos/podman-configure"
-HELPERS="$ROOT/lib/test/runtime-helpers.sh"
+HELPERS="$ROOT/tests/lib/runtime-helpers.sh"
 TMPDIR="$(mktemp -d)"
 MOCK_BIN="$TMPDIR/bin"
 STATE_DIR="$TMPDIR/state"

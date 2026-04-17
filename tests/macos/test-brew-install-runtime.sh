@@ -7,7 +7,7 @@ REPO_DIR="$TMPDIR/repo"
 MOCK_BIN="$TMPDIR/bin"
 NO_BREW_BIN="$TMPDIR/no-brew-bin"
 SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-install"
-HELPERS="$ROOT/lib/test/runtime-helpers.sh"
+HELPERS="$ROOT/tests/lib/runtime-helpers.sh"
 HOST_PYTHON3="$(command -v python3)"
 mkdir -p "$MOCK_BIN" "$NO_BREW_BIN" "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman"
 trap 'rm -rf "$TMPDIR"' EXIT
