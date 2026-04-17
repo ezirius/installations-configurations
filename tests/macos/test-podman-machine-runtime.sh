@@ -519,6 +519,56 @@ fi
 assert_contains "$STATE_DIR/unsupported.out" 'does not support required machine setting' 'podman-configure reports unsupported required settings clearly'
 assert_not_contains "$STATE_DIR/unsupported.out" 'unsupported settings should be rejected before stopping' 'podman-configure validates unsupported settings before stopping the machine'
 
+STATE_DIR="$TMPDIR/state-set-failure-restart"
+mkdir -p "$STATE_DIR"
+cat > "$MOCK_BIN/podman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="${STATE_DIR:?}"
+printf '%s\n' "$*" >> "$STATE_DIR/podman.log"
+case "$1" in
+  machine)
+    case "$2" in
+      inspect)
+        printf '[{"State":"running","Resources":{"CPUs":2,"DiskSize":60,"Memory":8192,"USBs":[]},"Rootful":false}]\n'
+        ;;
+      set)
+        if [[ "${3:-}" == --help ]]; then
+          printf '%s\n' '--cpus --memory --disk-size --rootful'
+          exit 0
+        fi
+        printf 'simulated machine set failure\n' >&2
+        exit 1
+        ;;
+      stop)
+        : > "$STATE_DIR/stopped.flag"
+        ;;
+      start)
+        if [[ ! -f "$STATE_DIR/stopped.flag" ]]; then
+          printf 'machine should only restart after stop\n' >&2
+          exit 1
+        fi
+        : > "$STATE_DIR/restarted.flag"
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  info)
+    printf '{}\n'
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$MOCK_BIN/podman"
+if printf 'y\n' | PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/set-failure.out" 2>&1; then
+  printf 'assertion failed: podman-configure should fail when a machine update fails after stopping the machine\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/podman.log" 'machine stop podman-machine-default' 'running podman machine is stopped before applying mutable settings that later fail'
+assert_contains "$STATE_DIR/podman.log" 'machine set --cpus 4 podman-machine-default' 'podman-configure attempts the planned machine setting before failing'
+assert_contains "$STATE_DIR/podman.log" 'machine start podman-machine-default' 'podman-configure restarts the machine when a mutable setting update fails after a stop'
+assert_contains "$STATE_DIR/set-failure.out" 'simulated machine set failure' 'podman-configure preserves the underlying machine set failure'
+
 STATE_DIR="$TMPDIR/state-disk-grow"
 mkdir -p "$STATE_DIR"
 cat > "$MOCK_BIN/podman" <<'EOF'

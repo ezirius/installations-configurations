@@ -114,12 +114,12 @@ import re
 import sys
 
 brewfile = pathlib.Path(sys.argv[1]).read_text().splitlines()
-pattern = re.compile(r'^(brew|cask)\s+"([^"]+)"')
+pattern = re.compile(r'''^(brew|cask)\s+(['"])([^'"]+)\2''')
 
 for line in brewfile:
     match = pattern.match(line.strip())
     if match:
-        print(f"{match.group(1)}|{match.group(2)}")
+        print(f"{match.group(1)}|{match.group(3)}")
 PY
 }
 

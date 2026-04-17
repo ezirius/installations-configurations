@@ -61,7 +61,7 @@ After running the machine install step, you can run:
 
 `scripts/macos/podman-check` prints Podman status information and runs a small test container.
 
-`scripts/macos/podman-check diagnose` prints a formatted diagnostic report to the terminal and saves a timestamped copy under `logs/podman/`. The diagnostic mode captures a point-in-time snapshot including Podman version info, machine state, containers, images, storage usage, recent events, machine SSH diagnostics, and the verification container run.
+`scripts/macos/podman-check diagnose` prints a formatted diagnostic report to the terminal and saves a timestamped copy under `logs/podman/`. The diagnostic mode captures a point-in-time snapshot including Podman version info, machine state, containers, images, storage usage, bounded non-streaming event snapshots for the configured recent windows, machine SSH diagnostics, and the verification container run.
 
 The diagnose mode is config-driven. The current defaults live in `config/podman/shared-macos.conf`:
 

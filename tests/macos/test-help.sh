@@ -4,14 +4,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMPDIR="$(mktemp -d)"
 MOCK_BIN="$TMPDIR/bin"
+MOCK_LINUX_BIN="$TMPDIR/linux-bin"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 mkdir -p "$MOCK_BIN"
+mkdir -p "$MOCK_LINUX_BIN"
 cat > "$MOCK_BIN/uname" <<'EOF'
 #!/usr/bin/env bash
 printf 'Darwin\n'
 EOF
 chmod +x "$MOCK_BIN/uname"
+
+cat > "$MOCK_LINUX_BIN/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Linux\n'
+EOF
+chmod +x "$MOCK_LINUX_BIN/uname"
 
 assert_contains() {
   local file="$1"
@@ -31,14 +39,26 @@ check_help() {
   assert_contains "$output_file" "$(basename "$script_path")" "help output names the script"
 }
 
+check_help_on_linux() {
+  local script_path="$1"
+  local output_file="$TMPDIR/linux-$(basename "$script_path").out"
+  PATH="$MOCK_LINUX_BIN:$PATH" "$script_path" --help >"$output_file"
+  assert_contains "$output_file" 'Usage:' "linux help output includes a usage header"
+  assert_contains "$output_file" "$(basename "$script_path")" "linux help output names the script"
+}
+
 check_help "$ROOT/scripts/macos/brew-install"
 check_help "$ROOT/scripts/macos/brew-upgrade"
 check_help "$ROOT/scripts/macos/brew-configure"
 assert_contains "$TMPDIR/brew-configure.out" 'caddy-configure' 'brew-configure help lists configured steps'
 assert_contains "$TMPDIR/brew-configure.out" 'podman-configure' 'brew-configure help reflects the current config-driven workflow'
 assert_contains "$TMPDIR/brew-configure.out" 'system-configure' 'brew-configure help reflects system-configure in the configured step list'
+check_help_on_linux "$ROOT/scripts/macos/brew-configure"
+assert_contains "$TMPDIR/linux-brew-configure.out" 'caddy-configure' 'brew-configure help stays config-driven off macOS'
 check_help "$ROOT/scripts/macos/brew-service"
 assert_contains "$TMPDIR/brew-service.out" 'caddy-service' 'brew-service help lists managed services from config'
+check_help_on_linux "$ROOT/scripts/macos/brew-service"
+assert_contains "$TMPDIR/linux-brew-service.out" 'caddy-service' 'brew-service help lists managed services off macOS'
 check_help "$ROOT/scripts/macos/caddy-configure"
 check_help "$ROOT/scripts/macos/caddy-service"
 check_help "$ROOT/scripts/macos/caddy-trust"
@@ -52,5 +72,8 @@ check_help "$ROOT/scripts/macos/system-configure"
 check_help "$ROOT/scripts/macos/brew-bootstrap"
 assert_contains "$TMPDIR/brew-bootstrap.out" 'brew-install' 'brew-bootstrap help lists configured bootstrap steps'
 assert_contains "$TMPDIR/brew-bootstrap.out" 'brew-service start' 'brew-bootstrap help shows the configured service action'
+check_help_on_linux "$ROOT/scripts/macos/brew-bootstrap"
+assert_contains "$TMPDIR/linux-brew-bootstrap.out" 'brew-install' 'brew-bootstrap help lists configured bootstrap steps off macOS'
+assert_contains "$TMPDIR/linux-brew-bootstrap.out" 'brew-service start' 'brew-bootstrap help shows the configured service action off macOS'
 
 echo "Help checks passed"

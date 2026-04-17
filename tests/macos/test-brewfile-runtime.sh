@@ -8,6 +8,7 @@ MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
 SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-install"
+HOST_PYTHON3="$(command -v python3)"
 mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
 mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman"
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -49,9 +50,9 @@ cat > "$MOCK_BIN/xcode-select" <<'EOF'
 [[ "$1" == -p ]]
 printf '/Library/Developer/CommandLineTools\n'
 EOF
-cat > "$MOCK_BIN/python3" <<'EOF'
+cat > "$MOCK_BIN/python3" <<EOF
 #!/usr/bin/env bash
-exec /usr/bin/python3 "$@"
+exec "$HOST_PYTHON3" "\$@"
 EOF
 cat > "$MOCK_BIN/brew" <<EOF
 #!/usr/bin/env bash
@@ -82,15 +83,16 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 
 BREWFILE="$TMPDIR/Brewfile"
 cat > "$BREWFILE" <<'EOF'
-brew "podman"
+brew 'podman'
 brew "podman-compose"
-cask "podman-desktop"
+cask 'podman-desktop'
+cask "ghostty"
 EOF
 
 STATE_DIR="$TMPDIR/state-idempotent"
 mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty"
-touch "$STATE_DIR/installed-formula-podman" "$STATE_DIR/installed-formula-podman-compose" "$STATE_DIR/installed-cask-podman-desktop"
+touch "$STATE_DIR/installed-formula-podman" "$STATE_DIR/installed-formula-podman-compose" "$STATE_DIR/installed-cask-podman-desktop" "$STATE_DIR/installed-cask-ghostty"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
 if [[ -f "$STATE_DIR/brew.log" ]]; then
   printf 'assertion failed: brew-install should not run install commands when entries already exist\n' >&2
@@ -103,6 +105,7 @@ PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$
 assert_contains "$STATE_DIR/brew.log" 'install podman' 'brew-install installs missing formulae from the Brewfile'
 assert_contains "$STATE_DIR/brew.log" 'install podman-compose' 'brew-install installs all missing Brewfile formulae'
 assert_contains "$STATE_DIR/brew.log" 'install --cask podman-desktop' 'brew-install installs missing casks from the Brewfile'
+assert_contains "$STATE_DIR/brew.log" 'install --cask ghostty' 'brew-install still installs double-quoted casks from the Brewfile'
 
 STATE_DIR="$TMPDIR/state-missing-brewfile"
 mkdir -p "$STATE_DIR"

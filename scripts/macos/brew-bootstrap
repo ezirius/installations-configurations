@@ -19,7 +19,7 @@ format_brew_array_lines() {
 }
 
 if is_help_flag "${1-}"; then
-  load_brew_workflow_config
+  source_shell_config "$SCRIPT_DIR/../../config/brew/shared-macos.conf"
   show_help "Usage: $(basename "$0")
 
 Run the full managed macOS Brew workflow defined in config.

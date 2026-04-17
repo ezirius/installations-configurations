@@ -58,42 +58,41 @@ cat > "$MOCK_BIN/podman" <<'EOF'
 #!/usr/bin/env bash
 STATE_DIR="${STATE_DIR:?}"
 printf '%s\n' "$*" >> "$STATE_DIR/podman.log"
-case "$1 $2 ${3-}" in
-  'version  ')
+case "$*" in
+  'version')
     printf 'client version\n'
     ;;
-  'machine list ')
+  'machine list')
     printf 'NAME RUNNING\n'
     ;;
   'machine inspect podman-machine-default')
     printf '[{"Name":"podman-machine-default"}]\n'
     ;;
-  'machine ssh podman-machine-default')
-    shift 3
-    printf 'machine:%s\n' "$*"
+  'machine ssh podman-machine-default bash -lc uptime')
+    printf 'machine:bash -lc uptime\n'
     ;;
-  'info  ')
+  'info')
     printf '{"host":"ok"}\n'
     ;;
-  'ps  ')
+  'ps')
     printf 'container-list\n'
     ;;
-  'ps -a ')
+  'ps -a')
     printf 'all-container-list\n'
     ;;
-  'images  ')
+  'images')
     printf 'image-list\n'
     ;;
-  'system df ')
+  'system df')
     printf 'storage-usage\n'
     ;;
-  'events --since 5m')
+  'events --stream=false --since 5m')
     printf 'event-stream\n'
     ;;
-  'events --since 30m')
+  'events --stream=false --since 30m')
     printf 'event-stream\n'
     ;;
-  'run --rm docker.io/library/alpine:3.22')
+  'run --rm docker.io/library/alpine:3.22 echo Hello from podman')
     printf 'Hello from podman\n'
     ;;
   *)
@@ -127,8 +126,8 @@ assert_contains "$REPORT_FILE" '## Summary' 'diagnose report includes a determin
 assert_contains "$REPORT_FILE" '### host uptime' 'diagnose report includes host-side diagnostics'
 assert_contains "$REPORT_FILE" '### podman system df' 'diagnose report includes storage diagnostics'
 assert_contains "$REPORT_FILE" '### podman machine ssh -- uptime' 'diagnose report includes machine SSH diagnostics'
-assert_contains "$STATE_DIR/podman.log" 'events --since 5m' 'diagnose mode captures short recent Podman events'
-assert_contains "$STATE_DIR/podman.log" 'events --since 30m' 'diagnose mode captures recent Podman events'
+assert_contains "$STATE_DIR/podman.log" 'events --stream=false --since 5m' 'diagnose mode captures a bounded short recent Podman event snapshot'
+assert_contains "$STATE_DIR/podman.log" 'events --stream=false --since 30m' 'diagnose mode captures a bounded recent Podman event snapshot'
 assert_contains "$STATE_DIR/podman.log" 'machine ssh podman-machine-default bash -lc uptime' 'diagnose mode targets the configured machine explicitly'
 
 cat > "$REPO_DIR/config/podman/shared-macos.conf" <<'EOF'
@@ -154,40 +153,39 @@ cat > "$MOCK_BIN/podman" <<'EOF'
 #!/usr/bin/env bash
 STATE_DIR="${STATE_DIR:?}"
 printf '%s\n' "$*" >> "$STATE_DIR/podman.log"
-case "$1 $2 ${3-}" in
-  'version  ')
+case "$*" in
+  'version')
     printf 'client version\n'
     ;;
-  'machine list ')
+  'machine list')
     printf 'NAME RUNNING\n'
     ;;
   'machine inspect podman-machine-default')
     printf '[{"Name":"podman-machine-default"}]\n'
     ;;
-  'machine ssh podman-machine-default')
-    shift 3
-    printf 'machine:%s\n' "$*"
+  'machine ssh podman-machine-default bash -lc uptime')
+    printf 'machine:bash -lc uptime\n'
     ;;
-  'info  ')
+  'info')
     printf 'broken info\n' >&2
     exit 42
     ;;
-  'ps  ')
+  'ps')
     printf 'container-list\n'
     ;;
-  'ps -a ')
+  'ps -a')
     printf 'all-container-list\n'
     ;;
-  'images  ')
+  'images')
     printf 'image-list\n'
     ;;
-  'system df ')
+  'system df')
     printf 'storage-usage\n'
     ;;
-  'events --since 5m')
+  'events --stream=false --since 5m')
     printf 'event-stream\n'
     ;;
-  'run --rm docker.io/library/alpine:3.22')
+  'run --rm docker.io/library/alpine:3.22 echo Hello from podman')
     printf 'Hello from podman\n'
     ;;
   *)
