@@ -83,4 +83,9 @@ PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$REPO_DIR/script
 grep -Fq -- 'install caddy' "$STATE_DIR/brew.log"
 grep -Fq -- 'install --cask ghostty' "$STATE_DIR/brew.log"
 
+if grep -Fq -- 'upgrade ' "$STATE_DIR/brew.log"; then
+  printf 'assertion failed: brew-install should not upgrade entries while processing layered Brewfiles\n' >&2
+  exit 1
+fi
+
 echo "Brew layered runtime checks passed"

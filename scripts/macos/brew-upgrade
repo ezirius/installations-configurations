@@ -38,31 +38,6 @@ cleanup() {
 
 trap cleanup EXIT
 
-snapshot_brewfile_state() {
-  local output_file="$1"
-  local entry_type
-  local entry_name
-  local version_line
-
-  : > "$output_file"
-
-  while IFS='|' read -r entry_type entry_name; do
-    version_line=""
-
-    if [[ "$entry_type" == "brew" ]]; then
-      version_line="$(brew list --versions "$entry_name" 2>/dev/null || true)"
-    else
-      version_line="$(brew list --cask --versions "$entry_name" 2>/dev/null || true)"
-    fi
-
-    if [[ -n "$version_line" ]]; then
-      printf '%s|%s|installed|%s\n' "$entry_type" "$entry_name" "$version_line" >> "$output_file"
-    else
-      printf '%s|%s|missing|\n' "$entry_type" "$entry_name" >> "$output_file"
-    fi
-  done < "$ENTRIES_FILE"
-}
-
 entry_is_outdated() {
   local entry_type="$1"
   local entry_name="$2"
@@ -77,53 +52,35 @@ entry_is_outdated() {
   [[ -n "$outdated_output" ]]
 }
 
+upgrade_outdated_brew_entry() {
+  local entry_type="$1"
+  local entry_name="$2"
+
+  if [[ "$entry_type" == "brew" ]]; then
+    if brew list --versions "$entry_name" >/dev/null 2>&1 && entry_is_outdated "brew" "$entry_name"; then
+      brew upgrade "$entry_name"
+    fi
+  else
+    if brew list --cask --versions "$entry_name" >/dev/null 2>&1 && entry_is_outdated "cask" "$entry_name"; then
+      brew upgrade --cask "$entry_name"
+    fi
+  fi
+}
+
 upgrade_brewfile_entries() {
   local brewfile_path="$1"
-  local entry_type
   local entry_name
+  local change_name
 
   echo "==> Checking Brewfile: $brewfile_path"
-  [[ -f "$brewfile_path" ]] || fail "Brewfile not found: $brewfile_path"
-
-  parse_brewfile_entries "$brewfile_path" > "$ENTRIES_FILE"
-  snapshot_brewfile_state "$BEFORE_FILE"
+  write_brewfile_entries "$brewfile_path" "$ENTRIES_FILE"
+  snapshot_brew_entries_state "$ENTRIES_FILE" "$BEFORE_FILE"
 
   echo "==> Upgrading installed outdated Brewfile entries: $brewfile_path"
-  while IFS='|' read -r entry_type entry_name; do
-    [[ -n "$entry_name" ]] || continue
+  for_each_brew_entry "$ENTRIES_FILE" upgrade_outdated_brew_entry
 
-    if [[ "$entry_type" == "brew" ]]; then
-      if brew list --versions "$entry_name" >/dev/null 2>&1 && entry_is_outdated "brew" "$entry_name"; then
-        brew upgrade "$entry_name"
-      fi
-    else
-      if brew list --cask --versions "$entry_name" >/dev/null 2>&1 && entry_is_outdated "cask" "$entry_name"; then
-        brew upgrade --cask "$entry_name"
-      fi
-    fi
-  done < "$ENTRIES_FILE"
-
-  snapshot_brewfile_state "$AFTER_FILE"
-
-  "$PYTHON3_COMMAND" - "$BEFORE_FILE" "$AFTER_FILE" <<'PY' > "$CHANGES_FILE"
-from pathlib import Path
-import sys
-
-def read_state(path):
-    rows = {}
-    for line in Path(path).read_text().splitlines():
-        entry_type, name, state, version = line.split('|', 3)
-        rows[(entry_type, name)] = {'state': state, 'version': version}
-    return rows
-
-before = read_state(sys.argv[1])
-after = read_state(sys.argv[2])
-
-for (entry_type, name), after_data in after.items():
-    before_data = before[(entry_type, name)]
-    if before_data['state'] == 'installed' and after_data['state'] == 'installed' and before_data['version'] != after_data['version']:
-        print(f'{name}|Upgraded')
-PY
+  snapshot_brew_entries_state "$ENTRIES_FILE" "$AFTER_FILE"
+  report_brew_upgrade_state_changes "$BEFORE_FILE" "$AFTER_FILE" "$PYTHON3_COMMAND" > "$CHANGES_FILE"
 
   while IFS='|' read -r entry_name change_name; do
     [[ -n "$entry_name" ]] || continue
@@ -155,14 +112,9 @@ if ! grep -q '^Already up-to-date\.$' "$BREW_UPDATE_OUTPUT_FILE"; then
 fi
 
 if [[ -n "$BREWFILE_OVERRIDE" ]]; then
-  upgrade_brewfile_entries "$BREWFILE_OVERRIDE"
+  for_each_managed_brewfile upgrade_brewfile_entries "$BREWFILE_OVERRIDE"
 else
-  upgrade_brewfile_entries "$(shared_platform_config_path "config/brew" "Brewfile")"
-
-  BREWFILE_OVERRIDE="$(host_platform_config_path "config/brew" "Brewfile")"
-  if [[ -f "$BREWFILE_OVERRIDE" ]]; then
-    upgrade_brewfile_entries "$BREWFILE_OVERRIDE"
-  fi
+  for_each_managed_brewfile upgrade_brewfile_entries
 fi
 
 echo "==> Homebrew and Brewfile entries are up to date"

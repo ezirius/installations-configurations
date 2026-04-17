@@ -21,6 +21,11 @@ cp "$ROOT/config/repo/shared.conf" "$REPO_DIR/config/repo/shared.conf"
 cp "$ROOT/config/podman/shared-macos.conf" "$REPO_DIR/config/podman/shared-macos.conf"
 chmod +x "$SCRIPT_FILE"
 
+cat > "$REPO_DIR/config/brew/shared-macos.Brewfile" <<'EOF'
+brew 'caddy'
+cask "ghostty"
+EOF
+
 git -C "$REPO_DIR" init -b main >/dev/null
 git -C "$REPO_DIR" config user.name 'Repo User'
 git -C "$REPO_DIR" config user.email 'repo.user@example.invalid'
@@ -62,6 +67,7 @@ case "\$1" in
     fi
     ;;
   update)
+    printf 'update\n' >> "\$STATE_DIR/brew.log"
     if [[ -f "\$STATE_DIR/up-to-date" ]]; then
       printf 'Already up-to-date.\n'
     else
@@ -126,8 +132,24 @@ STATE_DIR="$TMPDIR/state-updated"
 mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty" "$STATE_DIR/outdated-formula-caddy" "$STATE_DIR/outdated-cask-ghostty"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
+assert_contains "$STATE_DIR/brew.log" 'update' 'brew-upgrade runs brew update before explicit Brewfile upgrades'
 assert_contains "$STATE_DIR/brew.log" 'upgrade caddy' 'brew-upgrade upgrades outdated formulae'
 assert_contains "$STATE_DIR/brew.log" 'upgrade --cask ghostty' 'brew-upgrade upgrades outdated casks'
+
+STATE_DIR="$TMPDIR/state-default-shared"
+mkdir -p "$STATE_DIR"
+touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty" "$STATE_DIR/outdated-formula-caddy" "$STATE_DIR/outdated-cask-ghostty"
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out"
+assert_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/shared-macos.Brewfile" 'brew-upgrade processes the shared Brewfile by default'
+assert_not_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/maldoria-macos.Brewfile" 'brew-upgrade does not report a host-specific Brewfile when none is present'
+
+mapfile -t default_shared_log < "$STATE_DIR/brew.log"
+if [[ "${default_shared_log[0]-}" != 'update' ]]; then
+  printf 'assertion failed: brew-upgrade should run brew update before processing default shared entries\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/brew.log" 'upgrade caddy' 'brew-upgrade upgrades outdated shared formulae in default mode'
+assert_contains "$STATE_DIR/brew.log" 'upgrade --cask ghostty' 'brew-upgrade upgrades outdated shared casks in default mode'
 
 HOST_BREWFILE="$REPO_DIR/config/brew/maldoria-macos.Brewfile"
 cat > "$HOST_BREWFILE" <<'EOF'
@@ -139,15 +161,26 @@ git -C "$REPO_DIR" push >/dev/null 2>&1
 STATE_DIR="$TMPDIR/state-layered"
 mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-formula-podman" "$STATE_DIR/outdated-formula-caddy" "$STATE_DIR/outdated-formula-podman"
-PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
+PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out"
+assert_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/shared-macos.Brewfile" 'brew-upgrade still processes the shared Brewfile when a host-specific Brewfile exists'
+assert_contains "$STATE_DIR/out" "Checking Brewfile: $REPO_DIR/config/brew/maldoria-macos.Brewfile" 'brew-upgrade processes the host-specific Brewfile when present'
+
+mapfile -t layered_log < "$STATE_DIR/brew.log"
+if [[ "${layered_log[0]-}" != 'update' ]]; then
+  printf 'assertion failed: brew-upgrade should run brew update before shared and host-specific upgrades\n' >&2
+  exit 1
+fi
 assert_contains "$STATE_DIR/brew.log" 'upgrade caddy' 'brew-upgrade still upgrades shared Brewfile entries in default mode'
 assert_contains "$STATE_DIR/brew.log" 'upgrade podman' 'brew-upgrade also upgrades host-specific Brewfile entries in default mode'
 
 STATE_DIR="$TMPDIR/state-missing"
 mkdir -p "$STATE_DIR"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
-if [[ -f "$STATE_DIR/brew.log" ]]; then
-  printf 'assertion failed: brew-upgrade should not install or upgrade missing entries\n' >&2
+assert_not_contains "$STATE_DIR/brew.log" 'install ' 'brew-upgrade does not install missing entries'
+assert_not_contains "$STATE_DIR/brew.log" 'upgrade ' 'brew-upgrade does not upgrade missing entries'
+mapfile -t missing_log < "$STATE_DIR/brew.log"
+if [[ "${#missing_log[@]}" -ne 1 || "${missing_log[0]}" != 'update' ]]; then
+  printf 'assertion failed: brew-upgrade should only run brew update when Brewfile entries are missing\n' >&2
   exit 1
 fi
 
@@ -155,8 +188,11 @@ STATE_DIR="$TMPDIR/state-up-to-date"
 mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/installed-formula-caddy" "$STATE_DIR/installed-cask-ghostty" "$STATE_DIR/up-to-date"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >/dev/null
-if [[ -f "$STATE_DIR/brew.log" ]]; then
-  printf 'assertion failed: brew-upgrade should not run upgrades when entries are already current\n' >&2
+assert_not_contains "$STATE_DIR/brew.log" 'install ' 'brew-upgrade does not install current entries during upgrade runs'
+assert_not_contains "$STATE_DIR/brew.log" 'upgrade ' 'brew-upgrade does not upgrade current entries'
+mapfile -t up_to_date_log < "$STATE_DIR/brew.log"
+if [[ "${#up_to_date_log[@]}" -ne 1 || "${up_to_date_log[0]}" != 'update' ]]; then
+  printf 'assertion failed: brew-upgrade should only run brew update when Brewfile entries are already current\n' >&2
   exit 1
 fi
 
