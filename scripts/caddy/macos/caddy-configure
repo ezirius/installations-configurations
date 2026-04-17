@@ -22,14 +22,20 @@ SOURCE_CONFIG="${1:-}"
 BREW_PREFIX=""
 TARGET_CONFIG=""
 TEMP_FILE=""
+RENDERED_CONFIG=""
 PYTHON3_COMMAND=""
 
 load_caddy_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/caddy" "macos" "caddy-settings" "conf")"
+  source_layered_scoped_config "config/caddy" "macos" "caddy-settings" "conf"
+}
+
+validate_caddy_config() {
+  [[ -n "${CADDY_RUNTIME_RELATIVE_PATH-}" ]] || fail "CADDY_RUNTIME_RELATIVE_PATH is not set in the managed Caddy config"
 }
 
 cleanup() {
   rm -f "$TEMP_FILE"
+  rm -f "$RENDERED_CONFIG"
 }
 
 trap cleanup EXIT
@@ -54,6 +60,18 @@ PY
 
   mv "$TEMP_FILE" "$output_path"
   TEMP_FILE=""
+}
+
+collect_runtime_sources() {
+  local shared_runtime
+  local host_runtime
+
+  shared_runtime="$(shared_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile")"
+  host_runtime="$(host_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile")"
+
+  RUNTIME_SOURCES=()
+  [[ -f "$shared_runtime" ]] && RUNTIME_SOURCES+=("$shared_runtime")
+  [[ -f "$host_runtime" ]] && RUNTIME_SOURCES+=("$host_runtime")
 }
 
 deploy_rendered_caddyfile() {
@@ -83,24 +101,27 @@ require_command caddy "Run scripts/brew/macos/brew-install before configuring Ca
 initialize_change_log "scripts/caddy/macos/caddy-configure"
 PYTHON3_COMMAND="$(preferred_python3_command)"
 load_caddy_config
+validate_caddy_config
 
 BREW_PREFIX="$(brew --prefix)"
 TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"
+RENDERED_CONFIG="$TARGET_CONFIG.rendered"
 
 echo "==> Checking Caddy config source"
 if [[ -n "$SOURCE_CONFIG" ]]; then
   [[ -f "$SOURCE_CONFIG" ]] || fail "Caddyfile not found: $SOURCE_CONFIG"
-  render_caddyfile "$TARGET_CONFIG.rendered" "$SOURCE_CONFIG"
+  render_caddyfile "$RENDERED_CONFIG" "$SOURCE_CONFIG"
 else
-  SOURCE_CONFIG="$(preferred_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile")"
-  [[ -f "$SOURCE_CONFIG" ]] || fail "Managed Caddyfile not found: $SOURCE_CONFIG"
-  render_caddyfile "$TARGET_CONFIG.rendered" "$SOURCE_CONFIG"
+  collect_runtime_sources
+  [[ ${#RUNTIME_SOURCES[@]} -gt 0 ]] || fail "Managed Caddyfile not found for shared or matching host-specific config"
+  render_caddyfile "$RENDERED_CONFIG" "${RUNTIME_SOURCES[@]}"
 fi
 
 echo "==> Validating managed Caddyfile"
-caddy validate --config "$TARGET_CONFIG.rendered" --adapter caddyfile >/dev/null
+caddy validate --config "$RENDERED_CONFIG" --adapter caddyfile >/dev/null
 
 echo "==> Deploying managed Caddyfile"
-deploy_rendered_caddyfile "$TARGET_CONFIG.rendered" "$TARGET_CONFIG"
+deploy_rendered_caddyfile "$RENDERED_CONFIG" "$TARGET_CONFIG"
+RENDERED_CONFIG=""
 
 echo "==> Caddy config is ready"

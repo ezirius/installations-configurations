@@ -24,7 +24,13 @@ TARGET_CONFIG=""
 TRUSTED_KEYCHAIN=""
 
 load_caddy_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/caddy" "macos" "caddy-settings" "conf")"
+  source_layered_scoped_config "config/caddy" "macos" "caddy-settings" "conf"
+}
+
+validate_caddy_config_settings() {
+  [[ -n "${CADDY_RUNTIME_RELATIVE_PATH-}" ]] || fail "CADDY_RUNTIME_RELATIVE_PATH is not set in the managed Caddy config"
+  [[ -n "${CADDY_TRUST_CERT_NAME-}" ]] || fail "CADDY_TRUST_CERT_NAME is not set in the managed Caddy config"
+  [[ -n "${CADDY_TRUST_KEYCHAINS+set}" ]] || fail "CADDY_TRUST_KEYCHAINS is not set in the managed Caddy config"
 }
 
 find_trusted_keychain() {
@@ -47,6 +53,7 @@ require_command caddy "Run scripts/brew/macos/brew-install before trusting the C
 require_command security
 initialize_change_log "scripts/caddy/macos/caddy-trust"
 load_caddy_config
+validate_caddy_config_settings
 
 BREW_PREFIX="$(brew --prefix)"
 TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"

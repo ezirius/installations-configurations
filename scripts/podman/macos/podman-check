@@ -36,6 +36,24 @@ resolve_diagnose_output_dir() {
   fi
 }
 
+load_podman_runtime_config() {
+  source_layered_scoped_config "config/podman" "macos" "podman-runtime-settings" "conf"
+}
+
+validate_check_runtime_config() {
+  [[ -n "${PODMAN_CHECK_IMAGE-}" ]] || fail "PODMAN_CHECK_IMAGE is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_CHECK_COMMAND+set}" ]] || fail "PODMAN_CHECK_COMMAND is not set in the managed Podman runtime config"
+}
+
+validate_diagnose_runtime_config() {
+  validate_check_runtime_config
+  [[ -n "${PODMAN_MACHINE_NAME_DEFAULT-}" ]] || fail "PODMAN_MACHINE_NAME_DEFAULT is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_DIAGNOSE_OUTPUT_DIR-}" ]] || fail "PODMAN_DIAGNOSE_OUTPUT_DIR is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_DIAGNOSE_EVENT_WINDOWS+set}" ]] || fail "PODMAN_DIAGNOSE_EVENT_WINDOWS is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_DIAGNOSE_HOST_COMMANDS+set}" ]] || fail "PODMAN_DIAGNOSE_HOST_COMMANDS is not set in the managed Podman runtime config"
+  [[ -n "${PODMAN_DIAGNOSE_MACHINE_COMMANDS+set}" ]] || fail "PODMAN_DIAGNOSE_MACHINE_COMMANDS is not set in the managed Podman runtime config"
+}
+
 DIAGNOSE_SUMMARY_ROWS=()
 
 report_line() {
@@ -151,7 +169,8 @@ run_diagnose() {
 if [[ "$MODE" == "diagnose" ]]; then
   require_macos
   require_command podman "Install or update Podman first with scripts/brew/macos/brew-bootstrap or scripts/brew/macos/brew-upgrade"
-  source_shell_config "$(preferred_scoped_config_path "config/podman" "macos" "podman-runtime-settings" "conf")"
+  load_podman_runtime_config
+  validate_diagnose_runtime_config
   REPORT_FILE=""
   run_diagnose
   exit 0
@@ -159,7 +178,8 @@ fi
 
 require_macos
 require_command podman "Install or update Podman first with scripts/brew/macos/brew-bootstrap or scripts/brew/macos/brew-upgrade"
-source_shell_config "$(preferred_scoped_config_path "config/podman" "macos" "podman-runtime-settings" "conf")"
+load_podman_runtime_config
+validate_check_runtime_config
 
 echo "==> podman version"
 podman version

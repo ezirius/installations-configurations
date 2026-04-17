@@ -5,7 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
 
 load_brew_workflow_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf")"
+  source_layered_scoped_config "config/brew" "macos" "brew-settings" "conf"
+}
+
+validate_brew_workflow_config() {
+  [[ -n "${BREW_MANAGED_SERVICE_SCRIPTS+set}" ]] || fail "BREW_MANAGED_SERVICE_SCRIPTS is not set in the managed Brew workflow config"
 }
 
 format_brew_array_lines() {
@@ -51,6 +55,7 @@ esac
 
 require_macos
 load_brew_workflow_config
+validate_brew_workflow_config
 
 echo "==> Running managed Homebrew-backed service action: $ACTION"
 for service_script in "${BREW_MANAGED_SERVICE_SCRIPTS[@]}"; do

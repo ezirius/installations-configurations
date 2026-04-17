@@ -8,13 +8,14 @@ Scope: `macos/` means this page is only for the macOS workflow.
 
 ## Managed config model
 
-This repo manages a small shared set of macOS host settings through:
+This repo manages a small layered set of macOS host settings through:
 
 - `config/system/macos/system-settings-shared.conf`
+- `config/system/macos/system-settings-<host>.conf`
 
-The checked-in default lives in the shared macOS layer. If a matching `config/system/macos/system-settings-<host>.conf` exists for the current Mac, the script uses it instead of the shared file.
+The checked-in default lives in the shared macOS layer. If a matching `config/system/macos/system-settings-<host>.conf` exists for the current Mac, the script loads it after the shared file so host-specific values override the shared defaults.
 
-`scripts/system/macos/system-configure` uses simple host fallback: it loads the matching host-specific file when present, otherwise it uses `config/system/macos/system-settings-shared.conf`.
+`scripts/system/macos/system-configure` uses layered config: it loads `config/system/macos/system-settings-shared.conf` first when it exists and then loads `config/system/macos/system-settings-<host>.conf` when it exists. Host matching uses the machine hostname up to, but not including, the first `.`. Either file may be absent.
 
 ## Shared defaults
 
@@ -34,7 +35,7 @@ The config keys are written to describe the setting they control:
 
 `scripts/system/macos/system-configure`:
 
-1. loads the matching host-specific macOS system config when present, otherwise the shared fallback
+1. loads the shared macOS system config when present and then layers the matching host-specific config on top when present
 2. applies the managed Dock settings with `defaults`
 3. restarts the Dock only when Dock-related values changed
 4. applies the AC sleep setting with `pmset`

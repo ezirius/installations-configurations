@@ -28,7 +28,12 @@ TARGET_CONFIG=""
 CADDY_SERVICE_NAME=""
 
 load_caddy_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/caddy" "macos" "caddy-settings" "conf")"
+  source_layered_scoped_config "config/caddy" "macos" "caddy-settings" "conf"
+}
+
+validate_caddy_config_settings() {
+  [[ -n "${CADDY_RUNTIME_RELATIVE_PATH-}" ]] || fail "CADDY_RUNTIME_RELATIVE_PATH is not set in the managed Caddy config"
+  [[ -n "${CADDY_SERVICE_NAME-}" ]] || fail "CADDY_SERVICE_NAME is not set in the managed Caddy config"
 }
 
 validate_runtime_config() {
@@ -81,6 +86,7 @@ require_homebrew
 require_clt
 require_command caddy "Run scripts/brew/macos/brew-install before managing the Caddy service"
 load_caddy_config
+validate_caddy_config_settings
 
 BREW_PREFIX="$(brew --prefix)"
 TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"
@@ -104,6 +110,9 @@ case "$ACTION" in
 
       echo "==> Starting Caddy background service"
       if ! brew services start "$CADDY_SERVICE_NAME"; then
+        service_start_failed
+      fi
+      if ! service_started; then
         service_start_failed
       fi
     fi

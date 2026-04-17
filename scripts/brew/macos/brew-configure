@@ -5,7 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
 
 load_brew_workflow_config() {
-  source_shell_config "$(preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf")"
+  source_layered_scoped_config "config/brew" "macos" "brew-settings" "conf"
+}
+
+validate_brew_workflow_config() {
+  [[ -n "${BREW_CONFIGURE_STEPS+set}" ]] || fail "BREW_CONFIGURE_STEPS is not set in the managed Brew workflow config"
 }
 
 format_brew_array_lines() {
@@ -37,6 +41,7 @@ fi
 
 require_macos
 load_brew_workflow_config
+validate_brew_workflow_config
 
 echo "==> Running managed Homebrew-backed configuration"
 for step in "${BREW_CONFIGURE_STEPS[@]}"; do

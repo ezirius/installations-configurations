@@ -10,7 +10,7 @@ if is_help_flag "${1-}"; then
 Apply the managed macOS system settings.
 
 Notes:
-  - Loads the matching host-specific config when present, otherwise the shared fallback.
+  - Loads the shared config first when present, then the matching host-specific config when present.
   - Requires sudo for the managed pmset change."
 fi
 
@@ -18,8 +18,6 @@ if [[ $# -ne 0 ]]; then
   usage_error "$(basename "$0") takes no arguments"
 fi
 
-SHARED_SYSTEM_CONFIG="$(shared_platform_config_path "config/system" "system-settings" "conf")"
-SYSTEM_CONFIG="$(preferred_platform_config_path "config/system" "system-settings" "conf")"
 DOCK_AUTO_HIDE=""
 DOCK_REORDER_SPACES_BY_RECENT_USE=""
 AC_POWER_SYSTEM_SLEEP_MINUTES=""
@@ -29,9 +27,7 @@ SYSTEM_DOCK_AUTO_HIDE_KEY=""
 SYSTEM_DOCK_REORDER_SPACES_KEY=""
 
 load_system_config() {
-  [[ -f "$SYSTEM_CONFIG" ]] || return 0
-  # shellcheck disable=SC1090
-  source "$SYSTEM_CONFIG"
+  source_layered_platform_config "config/system" "system-settings" "conf"
 }
 
 bool_to_defaults_value() {
@@ -114,7 +110,6 @@ require_command pmset
 require_command sudo
 
 echo "==> Loading managed macOS system config"
-[[ -f "$SHARED_SYSTEM_CONFIG" ]] || fail "Managed macOS system config not found: $SHARED_SYSTEM_CONFIG"
 load_system_config
 
 [[ -n "$DOCK_AUTO_HIDE" ]] || fail "DOCK_AUTO_HIDE is not set in the managed macOS system config"

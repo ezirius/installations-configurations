@@ -180,7 +180,10 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
 
 test -f "$HOME_DIR/.config/containers/containers.conf"
-cmp "$ROOT/config/podman/macos/podman-machine-settings-shared.conf" "$HOME_DIR/.config/containers/containers.conf"
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'cpus=4' 'shared-only podman machine config installs the shared cpu value'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'memory=8192' 'shared-only podman machine config installs the shared memory value'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'disk_size=60' 'shared-only podman machine config installs the shared disk size value'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'rootful=false' 'shared-only podman machine config installs the shared rootful value'
 assert_contains "$STATE_DIR/podman.log" 'machine init --cpus 4 --memory 8192 --disk-size 60 --rootful false podman-machine-default' 'podman machine is initialised with configured settings'
 assert_contains "$STATE_DIR/podman.log" 'machine start podman-machine-default' 'podman machine is started'
 
@@ -192,20 +195,42 @@ cp "$ROOT/lib/shell/shared/machine-config.sh" "$REPO_DIR/lib/shell/shared/machin
 cp "$ROOT/config/repo/shared/repo-settings-shared.conf" "$REPO_DIR/config/repo/shared/repo-settings-shared.conf"
 cp "$ROOT/config/podman/macos/podman-runtime-settings-shared.conf" "$REPO_DIR/config/podman/macos/podman-runtime-settings-shared.conf"
 cp "$ROOT/config/podman/macos/podman-machine-settings-shared.conf" "$REPO_DIR/config/podman/macos/podman-machine-settings-shared.conf"
+cat > "$REPO_DIR/config/podman/macos/podman-runtime-settings-maldoria.conf" <<'EOF'
+PODMAN_MACHINE_NAME_DEFAULT="podman-machine-host"
+EOF
 cat > "$REPO_DIR/config/podman/macos/podman-machine-settings-maldoria.conf" <<'EOF'
 [machine]
 cpus=6
-memory=12288
-disk_size=80
-rootful=true
 EOF
 
 STATE_DIR="$TMPDIR/state-host-specific"
 HOME_DIR="$TMPDIR/home-host-specific"
 mkdir -p "$STATE_DIR" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$HOME_DIR/.config/containers"
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$REPO_DIR/scripts/podman/macos/podman-configure" >/dev/null
-cmp "$REPO_DIR/config/podman/macos/podman-machine-settings-maldoria.conf" "$HOME_DIR/.config/containers/containers.conf"
-assert_contains "$STATE_DIR/podman.log" 'machine init --cpus 6 --memory 12288 --disk-size 80 --rootful true podman-machine-default' 'podman machine prefers the host-specific machine settings when present'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'cpus=6' 'podman machine config layers the host-specific cpu override'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'memory=8192' 'podman machine config inherits shared memory when host config omits it'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'disk_size=60' 'podman machine config inherits shared disk size when host config omits it'
+assert_contains "$HOME_DIR/.config/containers/containers.conf" 'rootful=false' 'podman machine config inherits shared rootful when host config omits it'
+assert_contains "$STATE_DIR/podman.log" 'machine init --cpus 6 --memory 8192 --disk-size 60 --rootful false podman-machine-host' 'podman machine layers shared settings and host runtime overrides when creating a machine'
+
+STATE_DIR="$TMPDIR/state-invalid"
+mkdir -p "$STATE_DIR"
+cat > "$REPO_DIR/config/podman/macos/podman-machine-settings-maldoria.conf" <<'EOF'
+[machine]
+cpus=6
+disk_size=not-a-number
+EOF
+if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" STATE_DIR="$STATE_DIR" "$REPO_DIR/scripts/podman/macos/podman-configure" >/dev/null 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: podman-configure should reject invalid merged machine settings before mutating podman state\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'disk_size' 'podman-configure reports invalid machine disk size clearly'
+assert_not_contains "$STATE_DIR/podman.log" 'machine init' 'podman-configure should not create a machine when merged machine config is invalid'
+
+cat > "$REPO_DIR/config/podman/macos/podman-machine-settings-maldoria.conf" <<'EOF'
+[machine]
+cpus=6
+EOF
 
 STATE_DIR="$TMPDIR/state-existing"
 mkdir -p "$STATE_DIR"
