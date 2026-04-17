@@ -14,7 +14,7 @@ Arguments:
   [brewfile-path]  Optional explicit Brewfile override.
 
 Notes:
-  - Requires a clean, pushed repository state.
+  - Requires a clean, committed repository state.
   - Does not install missing entries.
   - Runs brew update before checking outdated managed entries."
 fi
@@ -91,7 +91,7 @@ upgrade_brewfile_entries() {
 
 require_macos
 require_command git
-require_clean_pushed_repo_state "$ROOT" "brew-upgrade"
+require_clean_committed_repo_state "$ROOT" "brew-upgrade"
 require_homebrew
 require_clt
 require_command cmp

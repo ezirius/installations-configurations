@@ -14,7 +14,7 @@ Arguments:
   [brewfile-path]  Optional explicit Brewfile override.
 
 Notes:
-  - Requires a clean, pushed repository state.
+  - Requires a clean, committed repository state.
   - Does not upgrade already installed entries.
   - Triggers the Xcode Command Line Tools installer if CLT are missing.
   - Refuses to auto-install Homebrew itself."
@@ -85,8 +85,8 @@ require_macos
 load_brew_install_config
 initialize_change_log "scripts/brew/macos/brew-install"
 require_command git
-if [[ "$BREW_INSTALL_REQUIRE_CLEAN_PUSHED_REPO" == "true" ]]; then
-  require_clean_pushed_repo_state "$ROOT" "brew-install"
+if [[ "$BREW_INSTALL_REQUIRE_COMMITTED_REPO" == "true" ]]; then
+  require_clean_committed_repo_state "$ROOT" "brew-install"
 fi
 
 echo "==> Checking Xcode Command Line Tools"
