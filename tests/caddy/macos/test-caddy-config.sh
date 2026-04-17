@@ -15,5 +15,13 @@ grep -q 'CADDY_RUNTIME_RELATIVE_PATH' "$SCRIPT_FILE"
 grep -q 'source_layered_scoped_config "config/caddy" "macos" "caddy-settings" "conf"' "$SCRIPT_FILE"
 grep -q 'shared_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile"' "$SCRIPT_FILE"
 grep -q 'host_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile"' "$SCRIPT_FILE"
+if grep -Eq '^  \[\[ -f "\$shared_runtime" \]\] && RUNTIME_SOURCES\+=' "$SCRIPT_FILE"; then
+  printf 'assertion failed: caddy-configure should not probe optional shared runtime files with bare [[ -f ]] && under set -e\n' >&2
+  exit 1
+fi
+if grep -Eq '^  \[\[ -f "\$host_runtime" \]\] && RUNTIME_SOURCES\+=' "$SCRIPT_FILE"; then
+  printf 'assertion failed: caddy-configure should not probe optional host runtime files with bare [[ -f ]] && under set -e\n' >&2
+  exit 1
+fi
 grep -q 'caddy validate --config' "$SCRIPT_FILE"
 echo "Caddy config checks passed"

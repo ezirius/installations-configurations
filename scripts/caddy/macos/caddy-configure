@@ -70,8 +70,12 @@ collect_runtime_sources() {
   host_runtime="$(host_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile")"
 
   RUNTIME_SOURCES=()
-  [[ -f "$shared_runtime" ]] && RUNTIME_SOURCES+=("$shared_runtime")
-  [[ -f "$host_runtime" ]] && RUNTIME_SOURCES+=("$host_runtime")
+  if [[ -f "$shared_runtime" ]]; then
+    RUNTIME_SOURCES+=("$shared_runtime")
+  fi
+  if [[ -f "$host_runtime" ]]; then
+    RUNTIME_SOURCES+=("$host_runtime")
+  fi
 }
 
 deploy_rendered_caddyfile() {
