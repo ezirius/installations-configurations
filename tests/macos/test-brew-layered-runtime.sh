@@ -8,6 +8,7 @@ STATE_DIR="$TMPDIR/state"
 MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
+HOST_PYTHON3="$(command -v python3)"
 mkdir -p "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman" "$STATE_DIR" "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -46,9 +47,9 @@ cat > "$MOCK_BIN/xcode-select" <<'EOF'
 [[ "$1" == -p ]]
 printf '/Library/Developer/CommandLineTools\n'
 EOF
-cat > "$MOCK_BIN/python3" <<'EOF'
+cat > "$MOCK_BIN/python3" <<EOF
 #!/usr/bin/env bash
-exec /usr/bin/python3 "$@"
+exec "$HOST_PYTHON3" "\$@"
 EOF
 cat > "$MOCK_BIN/brew" <<EOF
 #!/usr/bin/env bash

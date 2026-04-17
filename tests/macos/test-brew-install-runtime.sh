@@ -8,6 +8,7 @@ MOCK_BIN="$TMPDIR/bin"
 NO_BREW_BIN="$TMPDIR/no-brew-bin"
 SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-install"
 HELPERS="$ROOT/lib/test/runtime-helpers.sh"
+HOST_PYTHON3="$(command -v python3)"
 mkdir -p "$MOCK_BIN" "$NO_BREW_BIN" "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman"
 trap 'rm -rf "$TMPDIR"' EXIT
 source "$HELPERS"
@@ -81,10 +82,47 @@ case "$1" in
     ;;
 esac
 EOF
-chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/xcode-select" "$MOCK_BIN/brew"
+cat > "$MOCK_BIN/python3" <<EOF
+#!/usr/bin/env bash
+exec "$HOST_PYTHON3" "\$@"
+EOF
+chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/xcode-select" "$MOCK_BIN/brew" "$MOCK_BIN/python3"
 cp "$MOCK_BIN/uname" "$NO_BREW_BIN/uname"
 cp "$MOCK_BIN/xcode-select" "$NO_BREW_BIN/xcode-select"
 chmod +x "$NO_BREW_BIN/uname" "$NO_BREW_BIN/xcode-select"
+
+STATE_DIR="$TMPDIR/state-dirty-repo"
+mkdir -p "$STATE_DIR"
+touch "$REPO_DIR/dirty.txt"
+if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-install should fail when the repository has uncommitted changes\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Repository has uncommitted changes. Commit and push before running brew-install.' 'brew-install reports dirty working trees through the safety gate'
+rm -f "$REPO_DIR/dirty.txt"
+
+STATE_DIR="$TMPDIR/state-no-upstream"
+mkdir -p "$STATE_DIR"
+git -C "$REPO_DIR" checkout -b local-only >/dev/null
+if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-install should fail when the current branch has no upstream\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Current branch has no upstream. Push the branch before running brew-install.' 'brew-install reports missing upstream branches through the safety gate'
+git -C "$REPO_DIR" checkout main >/dev/null
+
+STATE_DIR="$TMPDIR/state-ahead-of-upstream"
+mkdir -p "$STATE_DIR"
+git -C "$REPO_DIR" checkout -b ahead origin/main >/dev/null
+touch "$REPO_DIR/ahead.txt"
+git -C "$REPO_DIR" add ahead.txt >/dev/null
+git -C "$REPO_DIR" commit -m 'Ahead-only runtime test' >/dev/null
+if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-install should fail when the current branch has unpushed commits\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Current branch has unpushed commits. Push before running brew-install.' 'brew-install reports branches ahead of upstream through the safety gate'
+git -C "$REPO_DIR" checkout main >/dev/null
 
 STATE_DIR="$TMPDIR/state-missing-clt"
 mkdir -p "$STATE_DIR"
@@ -100,6 +138,7 @@ mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/clt.installed"
 mkdir -p "$TMPDIR/brew-present"
 ln -sf "$MOCK_BIN/brew" "$TMPDIR/brew-present/brew"
+ln -sf "$MOCK_BIN/python3" "$TMPDIR/brew-present/python3"
 if ! PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
   printf 'assertion failed: brew-install should succeed when brew is already installed\n' >&2
   exit 1
@@ -110,7 +149,7 @@ STATE_DIR="$TMPDIR/state-install"
 mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/clt.installed"
 cat > "$TMPDIR/Brewfile" <<'EOF'
-brew "caddy"
+brew 'caddy'
 cask "ghostty"
 EOF
 PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$TMPDIR/Brewfile" >"$STATE_DIR/out" 2>"$STATE_DIR/err"

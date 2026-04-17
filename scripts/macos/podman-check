@@ -131,7 +131,7 @@ run_diagnose() {
 
   local event_window
   for event_window in "${PODMAN_DIAGNOSE_EVENT_WINDOWS[@]}"; do
-    run_diagnose_command "podman events --since $event_window" podman events --since "$event_window"
+    run_diagnose_command "podman events --stream=false --since $event_window" podman events --stream=false --since "$event_window"
   done
 
   local host_command

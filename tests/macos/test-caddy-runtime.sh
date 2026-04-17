@@ -9,6 +9,7 @@ MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 STATE_DIR="$TMPDIR/state"
 BREW_PREFIX="$TMPDIR/homebrew"
+HOST_PYTHON3="$(command -v python3)"
 mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$STATE_DIR" "$BREW_PREFIX/etc"
 trap 'rm -rf "$TMPDIR"' EXIT
 source "$HELPERS"
@@ -26,9 +27,9 @@ cat > "$MOCK_BIN/xcode-select" <<'EOF'
 [[ "$1" == -p ]]
 printf '/Library/Developer/CommandLineTools\n'
 EOF
-cat > "$MOCK_BIN/python3" <<'EOF'
+cat > "$MOCK_BIN/python3" <<EOF
 #!/usr/bin/env bash
-exec /usr/bin/python3 "$@"
+exec "$HOST_PYTHON3" "\$@"
 EOF
 cat > "$MOCK_BIN/brew" <<EOF
 #!/usr/bin/env bash
@@ -55,14 +56,14 @@ assert_contains "$TARGET_CONFIG" 'https://127.0.0.1:8123 {' 'shared Caddy HTTPS 
 assert_contains "$TARGET_CONFIG" 'reverse_proxy https://hovaryn.mioverso.com:8123' 'managed Caddy reverse proxy is deployed'
 assert_contains "$STATE_DIR/caddy.log" 'validate --config' 'managed shared Caddyfile is validated before deployment'
 
-COUNT_BEFORE=$(python3 - "$STATE_DIR/caddy.log" <<'PY'
+COUNT_BEFORE=$("$HOST_PYTHON3" - "$STATE_DIR/caddy.log" <<'PY'
 from pathlib import Path
 import sys
 print(Path(sys.argv[1]).read_text().count('validate --config'))
 PY
 )
 PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >/dev/null
-COUNT_AFTER=$(python3 - "$STATE_DIR/caddy.log" <<'PY'
+COUNT_AFTER=$("$HOST_PYTHON3" - "$STATE_DIR/caddy.log" <<'PY'
 from pathlib import Path
 import sys
 print(Path(sys.argv[1]).read_text().count('validate --config'))

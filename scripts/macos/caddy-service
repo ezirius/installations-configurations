@@ -37,7 +37,7 @@ validate_runtime_config() {
 resolve_listener_port() {
   local address_line
 
-  address_line="$(grep -E '^[[:space:]]*[^#[:space:]][^[:space:]]*[[:space:]]*\{' "$TARGET_CONFIG" 2>/dev/null | head -n 1 || true)"
+  address_line="$(grep -E '^[[:space:]]*[^#[:space:]\{]*:[^[:space:]]*[[:space:]]*\{' "$TARGET_CONFIG" 2>/dev/null | head -n 1 || true)"
   address_line="${address_line#${address_line%%[![:space:]]*}}"
   address_line="${address_line%%[[:space:]]*\{}"
 
@@ -85,7 +85,11 @@ BREW_PREFIX="$(brew --prefix)"
 TARGET_CONFIG="$BREW_PREFIX/$CADDY_RUNTIME_RELATIVE_PATH"
 
 [[ -f "$TARGET_CONFIG" ]] || fail "Managed Caddyfile not found: $TARGET_CONFIG; run scripts/macos/caddy-configure first"
-validate_runtime_config
+
+case "$ACTION" in
+  stop|status) ;;
+  *) validate_runtime_config ;;
+esac
 
 case "$ACTION" in
   start)

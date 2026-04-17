@@ -333,6 +333,19 @@ restore_machine_after_update() {
   fi
 }
 
+apply_planned_machine_preferences_with_restore() {
+  local update_status=0
+
+  prepare_machine_for_update
+  set +e
+  (set -e; apply_planned_machine_preferences)
+  update_status=$?
+  set -e
+  restore_machine_after_update
+
+  return "$update_status"
+}
+
 require_macos
 require_homebrew
 require_clt
@@ -390,9 +403,11 @@ else
     if [[ ${#MACHINE_SETTINGS_TO_APPLY[@]} -gt 0 ]]; then
       validate_planned_machine_settings_supported
       if prompt_yes_no "Apply the managed Podman machine changes for '$MACHINE_NAME'?"; then
-        prepare_machine_for_update
-        apply_planned_machine_preferences
-        restore_machine_after_update
+        apply_planned_machine_preferences_with_restore
+        update_status=$?
+        if [[ $update_status -ne 0 ]]; then
+          exit "$update_status"
+        fi
       else
         case $? in
           1)

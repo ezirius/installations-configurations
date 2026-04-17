@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 COMMON_FILE="$ROOT/lib/shell/common.sh"
 TMPDIR="$(mktemp -d)"
+HOST_PYTHON3="$(command -v python3)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 test -f "$COMMON_FILE"
@@ -27,9 +28,9 @@ cat > "$TMPDIR/bin/hostname" <<'EOF'
 printf 'IgnoredHost\n'
 EOF
 
-cat > "$TMPDIR/bin/python3" <<'EOF'
+cat > "$TMPDIR/bin/python3" <<EOF
 #!/usr/bin/env bash
-exec /usr/bin/python3 "$@"
+exec "$HOST_PYTHON3" "\$@"
 EOF
 
 chmod +x "$TMPDIR/bin/uname" "$TMPDIR/bin/scutil" "$TMPDIR/bin/hostname" "$TMPDIR/bin/python3"

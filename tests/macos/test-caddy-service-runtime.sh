@@ -94,11 +94,25 @@ if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" start >"$STATE_DIR/inv
   exit 1
 fi
 
+if ! PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" status >"$STATE_DIR/invalid-status.out" 2>"$STATE_DIR/invalid-status.err"; then
+  printf 'assertion failed: caddy-service status should work when runtime config validation fails\n' >&2
+  exit 1
+fi
+
+if ! PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" stop >"$STATE_DIR/invalid-stop.out" 2>"$STATE_DIR/invalid-stop.err"; then
+  printf 'assertion failed: caddy-service stop should work when runtime config validation fails\n' >&2
+  exit 1
+fi
+
+assert_contains "$STATE_DIR/brew.log" 'services info caddy' 'caddy-service status still works when validation fails'
+assert_contains "$STATE_DIR/brew.log" 'services stop caddy' 'caddy-service stop still works when validation fails'
+
 cat > "$MOCK_BIN/caddy" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$STATE_DIR/caddy.log"
 EOF
 chmod +x "$MOCK_BIN/caddy"
+: > "$STATE_DIR/caddy.log"
 
 if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" reload >"$STATE_DIR/reload.out" 2>"$STATE_DIR/reload.err"; then
   printf 'assertion failed: caddy-service reload should fail when the service is not running\n' >&2
@@ -178,6 +192,25 @@ if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" start >"$STATE_DIR/por
   exit 1
 fi
 assert_contains "$STATE_DIR/port.err" 'listener port is already in use' 'caddy-service reports listener port conflicts clearly'
+
+cat > "$BREW_PREFIX/etc/Caddyfile" <<'EOF'
+{
+  servers {
+    metrics
+  }
+}
+
+  :8443 {
+  respond "ok"
+}
+EOF
+: > "$STATE_DIR/brew.log"
+if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" "$SCRIPT_FILE" start >"$STATE_DIR/global-port.out" 2>"$STATE_DIR/global-port.err"; then
+  printf 'assertion failed: caddy-service start should fail when a leading global options block still uses a conflicting listener port\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/global-port.err" 'listener port is already in use' 'caddy-service detects listener port conflicts when the Caddyfile starts with global options'
+assert_not_contains "$STATE_DIR/brew.log" 'services start caddy' 'caddy-service should not try to start brew services when a global-options Caddyfile has a conflicting listener port'
 
 cat > "$MOCK_BIN/lsof" <<'EOF'
 #!/usr/bin/env bash

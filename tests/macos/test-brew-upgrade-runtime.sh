@@ -9,6 +9,7 @@ MOCK_BIN="$TMPDIR/bin"
 HOME_DIR="$TMPDIR/home"
 BREW_PREFIX="$TMPDIR/homebrew"
 SCRIPT_FILE="$REPO_DIR/scripts/macos/brew-upgrade"
+HOST_PYTHON3="$(command -v python3)"
 mkdir -p "$MOCK_BIN" "$HOME_DIR/Documents/Ezirius/Systems/Installations and Configurations/Computers" "$BREW_PREFIX" "$REPO_DIR/scripts/macos" "$REPO_DIR/lib/shell" "$REPO_DIR/config/brew" "$REPO_DIR/config/repo" "$REPO_DIR/config/podman"
 trap 'rm -rf "$TMPDIR"' EXIT
 source "$HELPERS"
@@ -42,9 +43,9 @@ cat > "$MOCK_BIN/xcode-select" <<'EOF'
 [[ "$1" == -p ]]
 printf '/Library/Developer/CommandLineTools\n'
 EOF
-cat > "$MOCK_BIN/python3" <<'EOF'
+cat > "$MOCK_BIN/python3" <<EOF
 #!/usr/bin/env bash
-exec /usr/bin/python3 "$@"
+exec "$HOST_PYTHON3" "\$@"
 EOF
 cat > "$MOCK_BIN/brew" <<EOF
 #!/usr/bin/env bash
@@ -84,9 +85,42 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/scutil" "$MOCK_BIN/xcode-select" "$MOCK_BI
 
 BREWFILE="$TMPDIR/Brewfile"
 cat > "$BREWFILE" <<'EOF'
-brew "caddy"
+brew 'caddy'
 cask "ghostty"
 EOF
+
+STATE_DIR="$TMPDIR/state-dirty-repo"
+mkdir -p "$STATE_DIR"
+touch "$REPO_DIR/dirty.txt"
+if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-upgrade should fail when the repository has uncommitted changes\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Repository has uncommitted changes. Commit and push before running brew-upgrade.' 'brew-upgrade reports dirty working trees through the safety gate'
+rm -f "$REPO_DIR/dirty.txt"
+
+STATE_DIR="$TMPDIR/state-no-upstream"
+mkdir -p "$STATE_DIR"
+git -C "$REPO_DIR" checkout -b local-only >/dev/null
+if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-upgrade should fail when the current branch has no upstream\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Current branch has no upstream. Push the branch before running brew-upgrade.' 'brew-upgrade reports missing upstream branches through the safety gate'
+git -C "$REPO_DIR" checkout main >/dev/null
+
+STATE_DIR="$TMPDIR/state-ahead-of-upstream"
+mkdir -p "$STATE_DIR"
+git -C "$REPO_DIR" checkout -b ahead origin/main >/dev/null
+touch "$REPO_DIR/ahead.txt"
+git -C "$REPO_DIR" add ahead.txt >/dev/null
+git -C "$REPO_DIR" commit -m 'Ahead-only runtime test' >/dev/null
+if PATH="$MOCK_BIN:$PATH" HOME="$HOME_DIR" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" "$BREWFILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-upgrade should fail when the current branch has unpushed commits\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Current branch has unpushed commits. Push before running brew-upgrade.' 'brew-upgrade reports branches ahead of upstream through the safety gate'
+git -C "$REPO_DIR" checkout main >/dev/null
 
 STATE_DIR="$TMPDIR/state-updated"
 mkdir -p "$STATE_DIR"
