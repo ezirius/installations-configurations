@@ -111,17 +111,33 @@ if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out
   printf 'assertion failed: brew-install should fail when the repository has uncommitted changes\n' >&2
   exit 1
 fi
-assert_contains "$STATE_DIR/err" 'Repository has uncommitted changes. Commit and push before running brew-install.' 'brew-install reports dirty working trees through the safety gate'
+assert_contains "$STATE_DIR/err" 'Repository has uncommitted changes. Commit everything before running brew-install.' 'brew-install reports dirty working trees through the safety gate'
 rm -f "$REPO_DIR/dirty.txt"
+
+ZERO_COMMIT_REPO_DIR="$TMPDIR/zero-commit-repo"
+ZERO_COMMIT_SCRIPT_FILE="$ZERO_COMMIT_REPO_DIR/scripts/brew/macos/brew-install"
+create_zero_commit_brew_repo "$ROOT" "$ZERO_COMMIT_REPO_DIR" "brew-install"
+
+STATE_DIR="$TMPDIR/state-zero-commit"
+mkdir -p "$STATE_DIR"
+if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$ZERO_COMMIT_SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-install should fail when the repository has no commits\n' >&2
+  exit 1
+fi
+assert_contains "$STATE_DIR/err" 'Repository must have at least one commit before running brew-install.' 'brew-install reports missing commits through the safety gate'
 
 STATE_DIR="$TMPDIR/state-no-upstream"
 mkdir -p "$STATE_DIR"
 git -C "$REPO_DIR" checkout -b local-only >/dev/null
-if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
-  printf 'assertion failed: brew-install should fail when the current branch has no upstream\n' >&2
+touch "$STATE_DIR/clt.installed"
+mkdir -p "$TMPDIR/brew-present"
+ln -sf "$MOCK_BIN/brew" "$TMPDIR/brew-present/brew"
+ln -sf "$MOCK_BIN/python3" "$TMPDIR/brew-present/python3"
+if ! PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-install should succeed when the current branch has no upstream\n' >&2
   exit 1
 fi
-assert_contains "$STATE_DIR/err" 'Current branch has no upstream. Push the branch before running brew-install.' 'brew-install reports missing upstream branches through the safety gate'
+assert_contains "$STATE_DIR/out" 'Homebrew already installed' 'brew-install allows committed local-only branches through the safety gate'
 git -C "$REPO_DIR" checkout main >/dev/null
 
 STATE_DIR="$TMPDIR/state-ahead-of-upstream"
@@ -130,11 +146,12 @@ git -C "$REPO_DIR" checkout -b ahead origin/main >/dev/null
 touch "$REPO_DIR/ahead.txt"
 git -C "$REPO_DIR" add ahead.txt >/dev/null
 git -C "$REPO_DIR" commit -m 'Ahead-only runtime test' >/dev/null
-if PATH="$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
-  printf 'assertion failed: brew-install should fail when the current branch has unpushed commits\n' >&2
+touch "$STATE_DIR/clt.installed"
+if ! PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
+  printf 'assertion failed: brew-install should succeed when the current branch is ahead of upstream\n' >&2
   exit 1
 fi
-assert_contains "$STATE_DIR/err" 'Current branch has unpushed commits. Push before running brew-install.' 'brew-install reports branches ahead of upstream through the safety gate'
+assert_contains "$STATE_DIR/out" 'Homebrew already installed' 'brew-install allows committed branches ahead of upstream through the safety gate'
 git -C "$REPO_DIR" checkout main >/dev/null
 
 STATE_DIR="$TMPDIR/state-missing-clt"
@@ -149,9 +166,6 @@ assert_contains "$STATE_DIR/xcode-select.log" 'install requested' 'brew-install 
 STATE_DIR="$TMPDIR/state-brew-present"
 mkdir -p "$STATE_DIR"
 touch "$STATE_DIR/clt.installed"
-mkdir -p "$TMPDIR/brew-present"
-ln -sf "$MOCK_BIN/brew" "$TMPDIR/brew-present/brew"
-ln -sf "$MOCK_BIN/python3" "$TMPDIR/brew-present/python3"
 if ! PATH="$TMPDIR/brew-present:$MOCK_BIN:$PATH" STATE_DIR="$STATE_DIR" "$SCRIPT_FILE" >"$STATE_DIR/out" 2>"$STATE_DIR/err"; then
   printf 'assertion failed: brew-install should succeed when brew is already installed\n' >&2
   exit 1

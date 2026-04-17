@@ -193,6 +193,20 @@ require_clean_pushed_repo_state() {
   fi
 }
 
+require_clean_committed_repo_state() {
+  local repo_path="$1"
+  local command_name="$2"
+
+  require_git_repo_path "$repo_path"
+
+  git -C "$repo_path" rev-parse --verify HEAD >/dev/null 2>&1 \
+    || fail "Repository must have at least one commit before running $command_name."
+
+  if [[ -n "$(git -C "$repo_path" status --porcelain)" ]]; then
+    fail "Repository has uncommitted changes. Commit everything before running $command_name."
+  fi
+}
+
 require_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
     fail "This script is for macOS only"
