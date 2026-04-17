@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
+
+load_brew_workflow_config() {
+  source_shell_config "$(preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf")"
+}
+
+format_brew_array_lines() {
+  local line_prefix="$1"
+  shift
+  local item
+
+  for item in "$@"; do
+    printf '%s%s\n' "$line_prefix" "$item"
+  done
+}
+
+if is_help_flag "${1-}"; then
+  load_brew_workflow_config
+  show_help "Usage: $(basename "$0") {start|stop|restart|reload|status}
+
+Manage the Homebrew-backed services owned by this repository.
+
+Actions:
+  start    Start all managed services.
+  stop     Stop all managed services.
+  restart  Restart all managed services.
+  reload   Reload all managed services where supported.
+  status   Show status for all managed services.
+
+Notes:
+  - Managed services from config:
+$(format_brew_array_lines '    - ' "${BREW_MANAGED_SERVICE_SCRIPTS[@]}")"
+fi
+
+if [[ $# -ne 1 ]]; then
+  usage_error "$(basename "$0") takes exactly 1 argument: {start|stop|restart|reload|status}"
+fi
+
+ACTION="$1"
+
+case "$ACTION" in
+  start|stop|restart|reload|status) ;;
+  *)
+    usage_error "$(basename "$0") takes exactly 1 argument: {start|stop|restart|reload|status}"
+    ;;
+esac
+
+require_macos
+load_brew_workflow_config
+
+echo "==> Running managed Homebrew-backed service action: $ACTION"
+for service_script in "${BREW_MANAGED_SERVICE_SCRIPTS[@]}"; do
+  "$(resolve_brew_workflow_script_path "$service_script")" "$ACTION"
+done
+
+echo "==> Managed Homebrew-backed service action is complete"

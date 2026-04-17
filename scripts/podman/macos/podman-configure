@@ -1,0 +1,458 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
+source "$SCRIPT_DIR/../../../lib/shell/shared/homebrew.sh"
+source "$SCRIPT_DIR/../../../lib/shell/shared/machine-config.sh"
+
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0") [machine-name]
+
+Deploy the managed Podman machine config and ensure the machine matches it.
+
+Arguments:
+  [machine-name]  Optional Podman machine name override. Defaults to the configured machine name.
+
+Notes:
+  - Creates the managed machine automatically when it does not yet exist.
+  - Asks for approval before applying managed machine-setting changes to an existing machine.
+  - If approval is declined, Podman reconciliation is bypassed and the differing settings are reported.
+  - Verifies podman info before finishing unless reconciliation is bypassed."
+fi
+
+if [[ $# -gt 1 ]]; then
+  usage_error "$(basename "$0") takes at most 1 argument: [machine-name]"
+fi
+
+ROOT="$(repo_root)"
+CONTAINERS_CONF_SOURCE=""
+CONTAINERS_CONF_TARGET=""
+MACHINE_NAME=""
+MACHINE_CPUS=""
+MACHINE_MEMORY=""
+MACHINE_DISK_SIZE=""
+MACHINE_ROOTFUL=""
+MACHINE_STORAGE_PATH=""
+MACHINE_STATE_BEFORE=""
+MACHINE_STATE_AFTER=""
+MACHINE_SET_HELP=""
+MACHINE_INIT_ARGS=()
+PYTHON3_COMMAND=""
+MACHINE_WAS_RUNNING="0"
+MACHINE_SETTINGS_BEFORE=""
+MACHINE_SETTINGS_AFTER=""
+CURRENT_MACHINE_CPUS=""
+CURRENT_MACHINE_MEMORY=""
+CURRENT_MACHINE_DISK_SIZE=""
+CURRENT_MACHINE_ROOTFUL=""
+MACHINE_SETTINGS_TO_APPLY=()
+MACHINE_SETTINGS_DIFF_LINES=()
+MACHINE_RECONCILIATION_BYPASSED="0"
+
+load_podman_config() {
+  source_shell_config "$(preferred_scoped_config_path "config/podman" "macos" "podman-runtime-settings" "conf")"
+  CONTAINERS_CONF_SOURCE="$(preferred_scoped_config_path "config/podman" "macos" "podman-machine-settings" "conf")"
+  CONTAINERS_CONF_TARGET="$HOME/$PODMAN_TARGET_RELATIVE_PATH"
+  MACHINE_NAME="${1:-$PODMAN_MACHINE_NAME_DEFAULT}"
+  MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH/${MACHINE_NAME}"
+
+  case "$PODMAN_DISK_SIZE_UPDATE_POLICY" in
+    grow-only|always) ;;
+    *) fail "Unsupported Podman disk-size update policy: $PODMAN_DISK_SIZE_UPDATE_POLICY" ;;
+  esac
+}
+
+populate_machine_init_args() {
+  MACHINE_INIT_ARGS=(
+    --cpus "$MACHINE_CPUS"
+    --memory "$MACHINE_MEMORY"
+    --disk-size "$MACHINE_DISK_SIZE"
+    --rootful "$MACHINE_ROOTFUL"
+  )
+}
+
+machine_set_option_supported() {
+  local option_name="$1"
+  [[ "$MACHINE_SET_HELP" == *"$option_name"* ]]
+}
+
+apply_machine_setting() {
+  local option_name="$1"
+  local option_value="$2"
+
+  if ! machine_set_option_supported "$option_name"; then
+    fail "Installed Podman does not support required machine setting: $option_name"
+  fi
+
+  podman machine set "$option_name" "$option_value" "$MACHINE_NAME" >/dev/null
+}
+
+validate_planned_machine_settings_supported() {
+  local index=0
+
+  while [[ $index -lt ${#MACHINE_SETTINGS_TO_APPLY[@]} ]]; do
+    if ! machine_set_option_supported "${MACHINE_SETTINGS_TO_APPLY[$index]}"; then
+      fail "Installed Podman does not support required machine setting: ${MACHINE_SETTINGS_TO_APPLY[$index]}"
+    fi
+    index=$((index + 2))
+  done
+}
+
+load_machine_set_help() {
+  MACHINE_SET_HELP="$(podman machine set --help 2>/dev/null || true)"
+}
+
+apply_planned_machine_preferences() {
+  local index=0
+
+  echo "==> Applying Podman machine preferences where supported"
+
+  while [[ $index -lt ${#MACHINE_SETTINGS_TO_APPLY[@]} ]]; do
+    apply_machine_setting "${MACHINE_SETTINGS_TO_APPLY[$index]}" "${MACHINE_SETTINGS_TO_APPLY[$((index + 1))]}"
+    index=$((index + 2))
+  done
+}
+
+machine_is_running() {
+  local inspect_json
+
+  inspect_json="$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)"
+  [[ -n "$inspect_json" ]] || return 1
+
+  "$PYTHON3_COMMAND" - "$inspect_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+
+if isinstance(data, list):
+    if not data:
+        sys.exit(1)
+    data = data[0]
+
+if not isinstance(data, dict):
+    sys.exit(1)
+
+state = data.get("State")
+if isinstance(state, dict):
+    running = state.get("Running")
+    if isinstance(running, bool):
+        sys.exit(0 if running else 1)
+
+if isinstance(state, str):
+    sys.exit(0 if state.strip().lower() == "running" else 1)
+
+sys.exit(1)
+PY
+}
+
+machine_state_summary() {
+  local inspect_json="$1"
+
+  "$PYTHON3_COMMAND" - "$inspect_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+
+if isinstance(data, list):
+    if not data:
+        raise SystemExit(1)
+    data = data[0]
+
+if not isinstance(data, dict):
+    raise SystemExit(1)
+
+state = data.get("State")
+running = None
+if isinstance(state, dict):
+    running = state.get("Running")
+elif isinstance(state, str):
+    running = state.strip().lower() == "running"
+
+summary = {
+    "running": running,
+    "cpus": data.get("Resources", {}).get("CPUs"),
+    "memory": data.get("Resources", {}).get("Memory"),
+    "disk_size": data.get("Resources", {}).get("DiskSize"),
+    "rootful": data.get("Rootful"),
+}
+
+print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+PY
+}
+
+machine_settings_summary() {
+  local inspect_json="$1"
+
+  "$PYTHON3_COMMAND" - "$inspect_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+
+if isinstance(data, list):
+    if not data:
+        raise SystemExit(1)
+    data = data[0]
+
+if not isinstance(data, dict):
+    raise SystemExit(1)
+
+summary = {
+    "cpus": data.get("Resources", {}).get("CPUs"),
+    "memory": data.get("Resources", {}).get("Memory"),
+    "disk_size": data.get("Resources", {}).get("DiskSize"),
+    "rootful": data.get("Rootful"),
+}
+
+print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+PY
+}
+
+json_summary_value() {
+  local json_summary="$1"
+  local key="$2"
+  local value
+
+  value="${json_summary#*\"$key\":}"
+  if [[ "$value" == "$json_summary" ]]; then
+    return 1
+  fi
+
+  value="${value%%,*}"
+  value="${value%%\}*}"
+  value="${value//\"/}"
+  if [[ "$value" == "null" ]]; then
+    value=""
+  fi
+  printf '%s\n' "$value"
+}
+
+add_machine_diff_line() {
+  local label="$1"
+  local current_value="$2"
+  local desired_value="$3"
+  local suffix="${4-}"
+
+  if [[ -z "$current_value" ]]; then
+    current_value="unset"
+  fi
+
+  MACHINE_SETTINGS_DIFF_LINES+=("$label: $current_value -> $desired_value$suffix")
+}
+
+queue_machine_setting_if_needed() {
+  local option_name="$1"
+  local label="$2"
+  local current_value="$3"
+  local desired_value="$4"
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  add_machine_diff_line "$label" "$current_value" "$desired_value"
+  MACHINE_SETTINGS_TO_APPLY+=("$option_name" "$desired_value")
+}
+
+queue_disk_size_if_needed() {
+  local current_value="$1"
+  local desired_value="$2"
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$current_value" ]]; then
+    add_machine_diff_line "disk_size" "$current_value" "$desired_value"
+    MACHINE_SETTINGS_TO_APPLY+=("--disk-size" "$desired_value")
+    return 0
+  fi
+
+  if (( desired_value > current_value )); then
+    add_machine_diff_line "disk_size" "$current_value" "$desired_value"
+    MACHINE_SETTINGS_TO_APPLY+=("--disk-size" "$desired_value")
+    return 0
+  fi
+
+  add_machine_diff_line "disk_size" "$current_value" "$desired_value" " cannot be applied automatically (Podman disks can only grow)"
+}
+
+plan_machine_preferences() {
+  local machine_setting
+
+  MACHINE_SETTINGS_TO_APPLY=()
+  MACHINE_SETTINGS_DIFF_LINES=()
+  CURRENT_MACHINE_CPUS="$(json_summary_value "$MACHINE_SETTINGS_BEFORE" cpus || true)"
+  CURRENT_MACHINE_MEMORY="$(json_summary_value "$MACHINE_SETTINGS_BEFORE" memory || true)"
+  CURRENT_MACHINE_DISK_SIZE="$(json_summary_value "$MACHINE_SETTINGS_BEFORE" disk_size || true)"
+  CURRENT_MACHINE_ROOTFUL="$(json_summary_value "$MACHINE_SETTINGS_BEFORE" rootful || true)"
+
+  queue_machine_setting_if_needed --cpus cpus "$CURRENT_MACHINE_CPUS" "$MACHINE_CPUS"
+  queue_machine_setting_if_needed --memory memory "$CURRENT_MACHINE_MEMORY" "$MACHINE_MEMORY"
+
+  if [[ "$PODMAN_DISK_SIZE_UPDATE_POLICY" == "grow-only" ]]; then
+    queue_disk_size_if_needed "$CURRENT_MACHINE_DISK_SIZE" "$MACHINE_DISK_SIZE"
+  else
+    queue_machine_setting_if_needed --disk-size disk_size "$CURRENT_MACHINE_DISK_SIZE" "$MACHINE_DISK_SIZE"
+  fi
+
+  queue_machine_setting_if_needed --rootful rootful "$CURRENT_MACHINE_ROOTFUL" "$MACHINE_ROOTFUL"
+}
+
+print_machine_settings_diff() {
+  local diff_line
+
+  for diff_line in "${MACHINE_SETTINGS_DIFF_LINES[@]}"; do
+    printf '  - %s\n' "$diff_line"
+  done
+}
+
+bypass_machine_reconciliation_without_approval() {
+  MACHINE_RECONCILIATION_BYPASSED="1"
+  echo "==> Podman machine reconciliation bypassed because no approval input was available"
+  echo "==> Managed Podman settings still differ:"
+  print_machine_settings_diff
+}
+
+bypass_machine_reconciliation() {
+  MACHINE_RECONCILIATION_BYPASSED="1"
+  echo "==> Podman machine reconciliation bypassed by user"
+  echo "==> Managed Podman settings still differ:"
+  print_machine_settings_diff
+}
+
+prepare_machine_for_update() {
+  if machine_is_running; then
+    echo "==> Stopping running Podman machine before applying mutable settings"
+    podman machine stop "$MACHINE_NAME" >/dev/null
+    MACHINE_WAS_RUNNING="1"
+  else
+    MACHINE_WAS_RUNNING="0"
+  fi
+}
+
+restore_machine_after_update() {
+  if [[ "$MACHINE_WAS_RUNNING" == "1" ]]; then
+    echo "==> Restarting Podman machine after applying settings"
+    podman machine start "$MACHINE_NAME" >/dev/null
+  fi
+}
+
+apply_planned_machine_preferences_with_restore() {
+  local update_status=0
+
+  prepare_machine_for_update
+  set +e
+  (set -e; apply_planned_machine_preferences)
+  update_status=$?
+  set -e
+  restore_machine_after_update
+
+  return "$update_status"
+}
+
+require_macos
+require_homebrew
+require_clt
+require_command cmp
+initialize_change_log "scripts/podman/macos/podman-configure"
+PYTHON3_COMMAND="$(preferred_python3_command)"
+load_podman_config "$@"
+load_machine_set_help
+
+echo "==> Checking podman"
+if ! command -v podman >/dev/null 2>&1; then
+  fail "podman is not installed; run scripts/brew/macos/brew-install first"
+fi
+
+echo "==> Checking source containers.conf"
+if [[ ! -f "$CONTAINERS_CONF_SOURCE" ]]; then
+  fail "Missing source config: $CONTAINERS_CONF_SOURCE"
+fi
+
+echo "==> Reading machine settings from containers.conf"
+MACHINE_CPUS="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" cpus)"
+MACHINE_MEMORY="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" memory)"
+MACHINE_DISK_SIZE="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" disk_size)"
+MACHINE_ROOTFUL="$(read_machine_config_value "$CONTAINERS_CONF_SOURCE" rootful)"
+populate_machine_init_args
+
+echo "==> Deploying containers.conf"
+mkdir -p "$(dirname "$CONTAINERS_CONF_TARGET")"
+if [[ ! -f "$CONTAINERS_CONF_TARGET" ]] || ! cmp -s "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"; then
+  cp "$CONTAINERS_CONF_SOURCE" "$CONTAINERS_CONF_TARGET"
+  log_change "Configuration" "containers.conf" "Copied" "$CONTAINERS_CONF_TARGET" "Copied Podman machine settings from repository"
+fi
+
+echo "==> Ensuring Podman machine exists"
+if ! podman machine inspect "$MACHINE_NAME" >/dev/null 2>&1; then
+  podman machine init "${MACHINE_INIT_ARGS[@]}" "$MACHINE_NAME"
+  if [[ "$PODMAN_START_MACHINE_ON_CREATE" == "true" ]]; then
+    podman machine start "$MACHINE_NAME"
+  fi
+  if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
+    MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH"
+  fi
+  log_change "Configuration" "Podman machine" "Created" "$MACHINE_STORAGE_PATH" "Created machine $MACHINE_NAME"
+else
+  MACHINE_STATE_BEFORE="$(machine_state_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
+  MACHINE_SETTINGS_BEFORE="$(machine_settings_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
+  plan_machine_preferences
+  if [[ ${#MACHINE_SETTINGS_DIFF_LINES[@]} -gt 0 ]]; then
+    echo "==> Podman machine settings differ from managed config"
+    print_machine_settings_diff
+
+    if [[ "$PODMAN_RECONCILE_EXISTING_MACHINE" != "true" ]]; then
+      bypass_machine_reconciliation_without_approval
+    elif [[ ${#MACHINE_SETTINGS_TO_APPLY[@]} -gt 0 ]]; then
+      validate_planned_machine_settings_supported
+      if [[ "$PODMAN_REQUIRE_RECONCILIATION_APPROVAL" != "true" ]] || prompt_yes_no "Apply the managed Podman machine changes for '$MACHINE_NAME'?"; then
+        apply_planned_machine_preferences_with_restore
+        update_status=$?
+        if [[ $update_status -ne 0 ]]; then
+          exit "$update_status"
+        fi
+      else
+        case $? in
+          1)
+            bypass_machine_reconciliation
+            ;;
+          2)
+            bypass_machine_reconciliation_without_approval
+            ;;
+        esac
+      fi
+    fi
+  fi
+  MACHINE_STATE_AFTER="$(machine_state_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
+  MACHINE_SETTINGS_AFTER="$(machine_settings_summary "$(podman machine inspect "$MACHINE_NAME" 2>/dev/null || true)")"
+
+  if [[ "$MACHINE_SETTINGS_BEFORE" != "$MACHINE_SETTINGS_AFTER" ]]; then
+    if [[ ! -e "$MACHINE_STORAGE_PATH" ]]; then
+      MACHINE_STORAGE_PATH="$HOME/$PODMAN_MACHINE_STORAGE_RELATIVE_PATH"
+    fi
+    log_change "Configuration" "Podman machine" "Updated" "$MACHINE_STORAGE_PATH" "Updated machine $MACHINE_NAME settings"
+  fi
+
+  if [[ "$MACHINE_RECONCILIATION_BYPASSED" != "1" ]]; then
+    echo "==> Starting Podman machine if needed"
+    if [[ "$PODMAN_START_MACHINE_FOR_VERIFICATION" == "true" ]] && ! podman info >/dev/null 2>&1; then
+      podman machine start "$MACHINE_NAME"
+    fi
+  fi
+fi
+
+if [[ "$MACHINE_RECONCILIATION_BYPASSED" == "1" ]]; then
+  echo "==> Podman verification skipped because reconciliation was bypassed"
+  exit 0
+fi
+
+if [[ "$PODMAN_VERIFY_INFO_AFTER_RECONCILIATION" == "true" ]]; then
+  echo "==> Verifying Podman"
+  podman info >/dev/null
+fi
+
+echo "==> Podman is ready"

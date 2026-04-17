@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
+source "$SCRIPT_DIR/../../../lib/shell/shared/homebrew.sh"
+
+if is_help_flag "${1-}"; then
+  show_help "Usage: $(basename "$0") [brewfile-path]
+
+Install missing managed Homebrew formulae and casks.
+
+Arguments:
+  [brewfile-path]  Optional explicit Brewfile override.
+
+Notes:
+  - Requires a clean, pushed repository state.
+  - Does not upgrade already installed entries.
+  - Triggers the Xcode Command Line Tools installer if CLT are missing.
+  - Refuses to auto-install Homebrew itself."
+fi
+
+if [[ $# -gt 1 ]]; then
+  usage_error "$(basename "$0") takes at most 1 argument: [brewfile-path]"
+fi
+
+ROOT="$(repo_root)"
+BREW_INSTALL_CONFIG=""
+BREWFILE_OVERRIDE="${1:-}"
+BREW_PREFIX=""
+ENTRIES_FILE=""
+BEFORE_FILE=""
+AFTER_FILE=""
+CHANGES_FILE=""
+PYTHON3_COMMAND=""
+
+load_brew_install_config() {
+  source_shell_config "$(preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf")"
+}
+
+cleanup() {
+  rm -f "$ENTRIES_FILE" "$BEFORE_FILE" "$AFTER_FILE" "$CHANGES_FILE"
+}
+
+trap cleanup EXIT
+
+install_missing_brew_entry() {
+  local entry_type="$1"
+  local entry_name="$2"
+
+  if [[ "$entry_type" == "brew" ]]; then
+    if ! brew list --versions "$entry_name" >/dev/null 2>&1; then
+      brew install "$entry_name"
+    fi
+  elif [[ "$entry_type" == "cask" ]]; then
+    if ! brew list --cask --versions "$entry_name" >/dev/null 2>&1; then
+      brew install --cask "$entry_name"
+    fi
+  else
+    fail "Unsupported Brewfile entry type: $entry_type"
+  fi
+}
+
+process_brewfile() {
+  local brewfile_path="$1"
+
+  echo "==> Checking Brewfile: $brewfile_path"
+
+  write_brewfile_entries "$brewfile_path" "$ENTRIES_FILE"
+  snapshot_brew_entries_state "$ENTRIES_FILE" "$BEFORE_FILE"
+
+  echo "==> Installing missing Brewfile entries"
+  for_each_brew_entry "$ENTRIES_FILE" install_missing_brew_entry
+
+  snapshot_brew_entries_state "$ENTRIES_FILE" "$AFTER_FILE"
+  report_brew_install_state_changes "$BEFORE_FILE" "$AFTER_FILE" "$PYTHON3_COMMAND" > "$CHANGES_FILE"
+
+  while IFS='|' read -r entry_type entry_name change_name; do
+    [[ -n "$entry_name" ]] || continue
+    log_change "Installation" "$entry_name" "$change_name" "$BREW_PREFIX" "Managed by Brewfile"
+  done < "$CHANGES_FILE"
+}
+
+require_macos
+load_brew_install_config
+initialize_change_log "scripts/brew/macos/brew-install"
+require_command git
+if [[ "$BREW_INSTALL_REQUIRE_CLEAN_PUSHED_REPO" == "true" ]]; then
+  require_clean_pushed_repo_state "$ROOT" "brew-install"
+fi
+
+echo "==> Checking Xcode Command Line Tools"
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "==> Xcode Command Line Tools are not installed"
+  if [[ "$BREW_INSTALL_TRIGGER_CLT_INSTALLER_IF_MISSING" == "true" ]]; then
+    echo "==> Triggering Apple installer"
+    xcode-select --install || true
+    echo "==> Finish the Command Line Tools installation, then re-run this script"
+    exit 1
+  fi
+
+  fail "Xcode Command Line Tools are missing. Run: xcode-select --install"
+fi
+
+echo "==> Loading Homebrew into PATH if already installed"
+load_homebrew_shellenv
+
+if ! command -v brew >/dev/null 2>&1; then
+  if [[ "$BREW_INSTALL_ALLOW_HOMEBREW_AUTO_INSTALL" == "true" ]]; then
+    fail "Homebrew automatic installation is not implemented for this workflow."
+  fi
+
+  fail "Homebrew is not installed. $BREW_INSTALL_HOMEBREW_MANUAL_INSTALL_REASON"
+fi
+
+echo "==> Homebrew already installed"
+brew --version
+
+require_homebrew
+require_clt
+require_command cmp
+PYTHON3_COMMAND="$(preferred_python3_command)"
+
+BREW_PREFIX="$(brew --prefix)"
+ENTRIES_FILE="$(mktemp)"
+BEFORE_FILE="$(mktemp)"
+AFTER_FILE="$(mktemp)"
+CHANGES_FILE="$(mktemp)"
+
+if [[ -n "$BREWFILE_OVERRIDE" ]]; then
+  for_each_managed_brewfile process_brewfile "$BREWFILE_OVERRIDE"
+else
+  for_each_managed_brewfile process_brewfile
+fi
+
+echo "==> Homebrew and missing Brewfile entries are installed"

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/shell/shared/common.sh"
+
+load_brew_workflow_config() {
+  source_shell_config "$(preferred_scoped_config_path "config/brew" "macos" "brew-settings" "conf")"
+}
+
+format_brew_array_lines() {
+  local line_prefix="$1"
+  shift
+  local item
+
+  for item in "$@"; do
+    printf '%s%s\n' "$line_prefix" "$item"
+  done
+}
+
+if is_help_flag "${1-}"; then
+  load_brew_workflow_config
+  show_help "Usage: $(basename "$0")
+
+Run the managed post-install configuration steps defined in the Brew workflow config.
+
+Configured steps:
+$(format_brew_array_lines '  - ' "${BREW_CONFIGURE_STEPS[@]}")
+
+Notes:
+  - Does not start services. Use brew-service for service lifecycle actions."
+fi
+
+if [[ $# -ne 0 ]]; then
+  usage_error "$(basename "$0") takes no arguments"
+fi
+
+require_macos
+load_brew_workflow_config
+
+echo "==> Running managed Homebrew-backed configuration"
+for step in "${BREW_CONFIGURE_STEPS[@]}"; do
+  "$(resolve_brew_workflow_script_path "$step")"
+done
+
+echo "==> Homebrew-backed configuration is complete"

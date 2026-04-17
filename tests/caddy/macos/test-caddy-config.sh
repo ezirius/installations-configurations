@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+CONFIG_FILE="$ROOT/config/caddy/macos/caddy-runtime-shared.Caddyfile"
+METADATA_FILE="$ROOT/config/caddy/macos/caddy-settings-shared.conf"
+SCRIPT_FILE="$ROOT/scripts/caddy/macos/caddy-configure"
+test -f "$CONFIG_FILE"
+test -f "$METADATA_FILE"
+test -f "$SCRIPT_FILE"
+grep -q '^https://127.0.0.1:8123 {$' "$CONFIG_FILE"
+grep -q '^    reverse_proxy https://hovaryn.mioverso.com:8123$' "$CONFIG_FILE"
+grep -q '^CADDY_RUNTIME_RELATIVE_PATH=' "$METADATA_FILE"
+! grep -q '^CADDY_LISTENER_PORT=' "$METADATA_FILE"
+grep -q 'CADDY_RUNTIME_RELATIVE_PATH' "$SCRIPT_FILE"
+grep -q 'preferred_scoped_config_path "config/caddy" "macos" "caddy-settings" "conf"' "$SCRIPT_FILE"
+grep -q 'preferred_scoped_config_path "config/caddy" "macos" "caddy-runtime" "Caddyfile"' "$SCRIPT_FILE"
+grep -q 'caddy validate --config' "$SCRIPT_FILE"
+echo "Caddy config checks passed"
