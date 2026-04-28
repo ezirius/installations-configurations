@@ -259,6 +259,77 @@ test_rejects_positional_arguments() {
   assert_contains "$output_file" 'ERROR: system-configure takes no arguments. Use --help for usage.' 'system-configure should use the aligned invalid-argument message'
 }
 
+test_requires_macos() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  if TEST_UNAME=Linux PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/system/system-configure" > "$output_file" 2>&1; then
+    fail 'system-configure should fail outside macOS'
+  fi
+
+  assert_contains "$output_file" 'ERROR: This script is for macOS only' 'system-configure should fail with a clear macOS-only message'
+}
+
+test_requires_system_config_file() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should fail when the managed system config file is missing'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Managed macOS system config not found:' 'system-configure should fail clearly when the managed config file is missing'
+}
+
+test_requires_system_config_values_from_config_file() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
+# Shared macOS system settings.
+DOCK_AUTO_HIDE=true
+DOCK_REORDER_SPACES_BY_RECENT_USE=false
+AC_POWER_SYSTEM_SLEEP_MINUTES=0
+SYSTEM_DOCK_DOMAIN="com.apple.dock"
+SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
+SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
+SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
+SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
+SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
+SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
+SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
+EOF
+
+  if SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN='system-dock-autohide' run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should fail when a required config value is missing from the config file even if exported in the environment'
+  fi
+
+  assert_contains "$output_file" 'ERROR: SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config' 'system-configure should require managed values to come from the config file itself'
+}
+
 # Verify that the shared config is applied on a portable Mac when values differ.
 test_applies_shared_system_config_on_portable_mac() {
   local temp_dir
@@ -414,6 +485,9 @@ test_documentation_headers() {
 
 test_help_output
 test_rejects_positional_arguments
+test_requires_macos
+test_requires_system_config_file
+test_requires_system_config_values_from_config_file
 test_applies_shared_system_config_on_portable_mac
 test_prefers_host_specific_override_and_skips_unchanged_sleep
 test_applies_non_portable_sleep_change_with_a_scope
