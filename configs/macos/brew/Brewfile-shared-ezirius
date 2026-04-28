@@ -1,0 +1,27 @@
+# Shared macOS Brewfile for user 'ezirius'.
+#
+# Folder contract:
+# - configs/<os>/<application>/
+# - this file belongs to the 'brew' application under the 'macos' OS scope
+#
+# Filename contract:
+# - Brewfile-<host>-<username>
+# - 'shared' in the host slot means all hosts for that OS scope
+# - this file is loaded before any matching host-specific Brewfile in the same
+#   application folder
+#
+# Content contract:
+# - use only 'brew "..."' and 'cask "..."' entries
+# - unsupported directives are rejected by scripts/shared/brew/brew-install
+
+# CLI tools
+brew "nushell"
+brew "opencode"
+
+# Apps
+cask "ghostty"
+cask "multipass"
+cask "rustdesk"
+cask "tailscale-app"
+cask "utm"
+cask "vscodium"

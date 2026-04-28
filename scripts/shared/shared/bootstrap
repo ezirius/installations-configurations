@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Run the active shared setup workflow.
+#
+# This script is a thin cross-application orchestrator. It currently runs:
+# - scripts/shared/brew/brew-install
+# - scripts/macos/system/system-configure on macOS only
+#
+# The workflow stops on the first failure.
+
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../../libs/shared/shared/common.sh"
+
+show_usage() {
+  show_help "Usage: $(basename "$0") [--help]
+
+Run the active shared setup workflow.
+
+Steps:
+  1. brew-install
+  2. system-configure
+
+Notes:
+  - Stops on the first failure.
+  - Takes no positional arguments."
+}
+
+main() {
+  local root_path
+  local os_name
+
+  if is_help_flag "${1-}"; then
+    show_usage
+  fi
+
+  if [[ $# -ne 0 ]]; then
+    fail 'bootstrap takes no arguments. Use --help for usage.'
+  fi
+
+  root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  os_name="$(detect_os)"
+
+  print_green 'Running brew-install'
+  "$root_path/scripts/shared/brew/brew-install"
+
+  if [[ "$os_name" == 'macos' && -x "$root_path/scripts/macos/system/system-configure" ]]; then
+    print_green 'Running system-configure'
+    "$root_path/scripts/macos/system/system-configure"
+  elif [[ "$os_name" == 'macos' ]]; then
+    print_amber 'Skipping missing macOS system-configure workflow'
+  fi
+
+  print_green 'Bootstrap complete'
+}
+
+main "$@"

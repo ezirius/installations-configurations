@@ -1,103 +1,277 @@
-# Personal macOS installation and configuration helpers
+# Installation And Configurations
 
-This repository now automates the macOS Homebrew, Caddy, Podman, and standalone system-settings workflow.
+## Current Layout
 
-## Layout
+The current active repo layout is intentionally small:
 
-A category is the top-level folder such as `config/`, `docs/`, `scripts/`, or `tests/`.
+- `configs/` stores application configs grouped by OS scope.
+- `libs/shared/` stores shell helpers shared by macOS and Linux scripts.
+- `scripts/` stores runnable scripts grouped by OS scope and application.
+- `tests/shared/` stores shared shell tests grouped by application.
+- `logs/` is reserved for runtime output and is gitignored.
 
-A subcategory is the next folder that groups files by tool or topic such as `brew/`, `caddy/`, `podman/`, `shared/`, or `system/`.
+The current active workflows are:
 
-Scope tells you who a file is for. `shared/` means every machine can use it. `macos/` means the file is for macOS. A hostname in a filename means the file is only for that machine.
+- Homebrew installation through layered Brewfiles
+- Apple Mac restore images and full installer downloads from Apple's official sources
+- macOS system configuration through layered system settings files
 
-- `config/` stores managed settings files
-- `config/brew/` stores Brewfiles and Brew wrapper settings
-- `config/caddy/` stores the managed Caddyfile source
-- `config/podman/` stores Podman machine and runtime defaults
-- `config/repo/` stores repo-wide naming and path rules
-- `config/system/` stores managed macOS system-setting defaults
-- `docs/` stores setup notes written for people
-- `lib/shell/shared/` stores shared shell helpers
-- `scripts/` stores runnable setup and verification commands
-- `tests/shared/shared/` stores the shared test runner entrypoints and shared shell checks
+## Active Files
 
-## Quickstart
+The current active implementation surface is:
 
-Before running the managed setup flow:
+- `configs/macos/brew/Brewfile-shared-ezirius`
+- `configs/macos/system/system-settings-shared.conf`
+- `libs/shared/shared/common.sh`
+- `scripts/shared/brew/brew-install`
+- `scripts/macos/downloads/macos-download`
+- `scripts/shared/shared/bootstrap`
+- `scripts/macos/system/system-configure`
+- `tests/shared/brew/test-brew-install.sh`
+- `tests/shared/downloads/test-macos-download.sh`
+- `tests/shared/shared/test-bootstrap.sh`
+- `tests/shared/system/test-system-configure.sh`
 
-1. Ensure `python3` is already available on the machine. Several managed scripts use it before the Brewfile-managed packages are installed.
+These files are the current source of truth for the active Brew, downloads,
+bootstrap, and system workflows.
+Repository documentation should stay aligned with them.
 
-2. Ensure Homebrew itself is already installed. This repository intentionally does not run the upstream moving installer script automatically.
+All active scripts, libs, tests, configs, and docs should be well documented.
 
-Run these in order:
+Active test files should include a short header that describes the covered
+behaviors and the isolation approach used by the test.
 
-1. Run `scripts/brew/macos/brew-install`
-2. Run `scripts/brew/macos/brew-upgrade`
-3. Run `scripts/brew/macos/brew-configure`
-4. Run `scripts/brew/macos/brew-service start`
-5. Optionally run `scripts/podman/macos/podman-check`
+Shared entrypoint scripts should accept only no arguments or `--help` / `-h`.
+Any other argument should fail with:
 
-Or run `scripts/brew/macos/brew-bootstrap` to execute the same managed script sequence in one command once the prerequisites above are already in place.
+```text
+ERROR: <script-name> takes no arguments. Use --help for usage.
+```
 
-The shared macOS Brewfile installs the managed package set for this repository: `caddy`, `podman`, `podman-compose`, and `podman-desktop`. Wrapper defaults live in metadata files under `config/`, with `config/repo/` and `config/podman/` supporting the remaining shared shell helpers.
+The current shared entrypoints are:
 
-## Config selection
+- `scripts/shared/brew/brew-install`
+- `scripts/shared/shared/bootstrap`
 
-This repository uses layered shared and host-specific config.
+The current macOS-only entrypoints are:
 
-For every managed config family:
+- `scripts/macos/downloads/macos-download`
+- `scripts/macos/system/system-configure`
 
-1. The shared file is installed or loaded first when it exists.
-2. The matching host-specific file is installed or loaded after it when it exists.
-3. Host matching uses the machine hostname up to, but not including, the first `.`.
-4. Either file may be absent.
+## Brewfile Contract
 
-- Brewfiles:
-  - shared: `config/brew/macos/brew-packages-shared.Brewfile`
-  - host-specific: `config/brew/macos/brew-packages-<host>.Brewfile`
-In the current repository state, the shared Brewfile is used when it exists, and the matching host-specific Brewfile is applied after it when it exists.
+Brewfiles live under:
 
-`scripts/brew/macos/brew-install` first checks for Xcode Command Line Tools and triggers `xcode-select --install` if they are missing, then stops until that installation is complete. After that, it checks for an existing Homebrew installation, stops with a manual-install message when Homebrew is missing, and then installs only missing entries from the selected Brewfile using the normal host-fallback rules. `scripts/brew/macos/brew-install` and `scripts/brew/macos/brew-upgrade` also require this repository to have at least one commit and a clean checkout before they run. This repository does not execute the upstream moving installer script automatically because that path is not checksum-verifiable in this workflow.
+- `configs/shared/brew/`
+- `configs/macos/brew/`
+- `configs/linux/brew/`
 
-`caddy` is managed through the shared and matching host-specific files under `config/caddy/macos/` together with Homebrew's background service integration.
+Each Brewfile must use this filename pattern:
 
-The normal Caddy change workflow is:
+```text
+Brewfile-<host>-<username>
+```
 
-1. Edit `config/caddy/macos/caddy-runtime-shared.Caddyfile` and `config/caddy/macos/caddy-runtime-<host>.Caddyfile` as needed
-2. Run `scripts/caddy/macos/caddy-configure`
-3. Run `scripts/caddy/macos/caddy-service reload`
+Where:
 
-For local HTTPS trust, run `scripts/caddy/macos/caddy-trust` after `scripts/caddy/macos/caddy-configure` has deployed the managed Caddyfile for `https://127.0.0.1:8123`. In the default workflow this already happens inside `scripts/brew/macos/brew-configure`.
+- `<host>` is either `shared` or the current hostname normalized to lowercase up to the first `.`
+- `<username>` is `whoami`, normalized to lowercase with non-alphanumeric characters converted to `-`
 
-`scripts/brew/macos/brew-configure` is the post-install umbrella command for the current Brew workflow. It loads `config/brew/macos/brew-settings-shared.conf` first when it exists, then `config/brew/macos/brew-settings-<host>.conf` when it exists. The current shared defaults are:
+Examples:
 
-1. `scripts/caddy/macos/caddy-configure`
-2. `scripts/caddy/macos/caddy-trust`
-3. `scripts/podman/macos/podman-configure`
-4. `scripts/system/macos/system-configure`
+- `configs/shared/brew/Brewfile-shared-ezirius`
+- `configs/shared/brew/Brewfile-maldoria-ezirius`
+- `configs/macos/brew/Brewfile-shared-ezirius`
+- `configs/macos/brew/Brewfile-maldoria-ezirius`
 
-`scripts/brew/macos/brew-service` is the service-lifecycle umbrella command. It currently manages the background Caddy service and accepts `start`, `stop`, `restart`, `reload`, and `status`.
+## Brewfile Resolution
 
-Managed user config is centralised under `~/.config`:
+`scripts/shared/brew/brew-install` detects:
 
-- `~/.config/containers/containers.conf`
+- OS: `macos` or `linux`
+- host: normalized hostname
+- username: normalized `whoami`
 
-Where possible, the repository adds managed include or autoload files instead of replacing user primary config wholesale.
+It then loads every matching Brewfile in this order:
 
-Operational defaults are expected to live in configuration files under `config/` rather than in scripts or `lib/shell/shared/common.sh`. Scripts keep control flow and validation logic, while config files own path layouts, service defaults, deployment manifests, and wrapper-level default values.
+1. `configs/shared/brew/Brewfile-shared-<username>`
+2. `configs/shared/brew/Brewfile-<host>-<username>`
+3. `configs/<os>/brew/Brewfile-shared-<username>`
+4. `configs/<os>/brew/Brewfile-<host>-<username>`
 
-The repository also ships a macOS system-settings command:
+Shared files provide the baseline. Host-specific files add to that baseline.
 
-1. `scripts/system/macos/system-configure`
+If no matching Brewfiles exist, the script fails with an error.
 
-It now runs as part of `scripts/brew/macos/brew-configure`, and it can still be run directly when you only want to re-apply the managed system settings.
+## Brewfile Contents
 
-Run `scripts/system/macos/system-configure --help` to inspect the command without applying the managed settings.
+The current parser recognizes these entry forms:
 
-See `docs/caddy/macos/caddy.md`, `docs/podman/macos/podman.md`, and `docs/system/macos/system.md` for the focused macOS notes. The machine install step applies the configured Podman machine settings before starting the machine.
+```ruby
+brew "formula-name"
+cask "cask-name"
+```
 
-## Verification
+Blank lines and comment lines beginning with `#` are ignored.
+Any other non-empty line is rejected as an error so unsupported Brewfile
+directives do not fail silently.
 
-The main verification entrypoint is `tests/shared/shared/test-all.sh`.
+## `scripts/shared/brew/brew-install`
 
-Scripts that do not take positional arguments now reject them explicitly, and scripts with a single optional override accept at most one positional argument.
+This script is the current shared Homebrew installer entrypoint.
+
+Behavior:
+
+1. Detect repo root from the script location.
+2. Detect OS, host, and username.
+3. Load Homebrew into `PATH` if it is installed in a standard prefix.
+4. Install Homebrew itself if it is still missing, then log `Installed,brew,<version>`.
+5. Resolve matching Brewfiles.
+6. Parse each matching Brewfile in order.
+7. Install only missing formulae and casks.
+8. Skip already installed entries.
+9. Reject unsupported Brewfile directives with a clear error.
+10. Append one CSV row for each successful install to the per-host activity log.
+11. Do not run `brew update` or upgrade already installed entries.
+
+The script does not implement architecture selection. Homebrew handles ARM/x86 selection.
+`brew-upgrade` is the intended workflow for updating Homebrew metadata and
+upgrading managed entries.
+
+## `libs/shared/shared/common.sh`
+
+This file is the current shared shell helper library for both macOS and Linux.
+
+It owns generic helpers for:
+
+- terminal colors and error output
+- help-flag handling
+- repo-root resolution from a script path
+- OS, host, and username detection
+- Homebrew shell environment loading
+- South Africa activity-log timestamps and CSV log helpers
+
+Script-specific workflow logic should stay in the calling script instead of
+being moved into `libs/shared/shared/common.sh` too early.
+
+## Output Conventions
+
+`scripts/shared/brew/brew-install` uses color when writing to a terminal:
+
+- green: success and active selections
+- amber: warnings and skips
+- red: errors
+
+Non-interactive output remains plain text.
+
+Shared entrypoint scripts use the same CLI color contract:
+
+- green: success
+- amber: warnings and skips
+- red: errors
+
+## Activity Logs
+
+The active install workflow writes CSV activity logs under:
+
+- `logs/macos/shared/`
+- `logs/linux/shared/`
+
+Each host writes to:
+
+```text
+logs/<os>/shared/installations-and-configurations-<host>.csv
+```
+
+The CSV header is:
+
+```text
+date,time,host,action,application,version
+```
+
+Current action values:
+
+- `Installed` for Homebrew itself when `scripts/shared/brew/brew-install` installs it
+- `Installed` from `scripts/shared/brew/brew-install`
+- `Updated` from `scripts/macos/system/system-configure` when a managed system setting changes
+
+Dates and times are written in South Africa time using the
+`Africa/Johannesburg` timezone.
+
+## Tests
+
+The current scripts are covered by:
+
+- `tests/shared/brew/test-brew-install.sh`
+- `tests/shared/downloads/test-macos-download.sh`
+- `tests/shared/shared/test-bootstrap.sh`
+- `tests/shared/system/test-system-configure.sh`
+
+Run it with:
+
+```bash
+tests/shared/brew/test-brew-install.sh
+tests/shared/downloads/test-macos-download.sh
+tests/shared/shared/test-bootstrap.sh
+tests/shared/system/test-system-configure.sh
+```
+
+## `scripts/macos/downloads/macos-download`
+
+This script lists official Apple macOS restore images and full installers,
+groups them by architecture, and lets the user download one official Apple
+artifact.
+
+Behavior:
+
+1. Uses Apple's public macOS IPSW catalog as the official direct source for Apple Silicon restore images.
+2. Uses `softwareupdate --list-full-installers` and `--fetch-full-installer` for official full installer downloads.
+3. Uses Apple's public macOS IPSW catalog and `softwareupdate` as the active official sources.
+4. Groups entries into `ARM` and `X86` sections.
+5. Labels each entry as `IPSW` or `Installer`.
+6. Marks entries as `Download available` only when an official Apple download path exists.
+7. Lets the user select one downloadable entry by number.
+8. Sorts each section newest to oldest by version and build.
+9. Supports `--help` and takes no positional arguments.
+
+Note:
+
+- Apple Silicon restore images come from Apple's public macOS IPSW catalog.
+- Full installers come from Apple's `softwareupdate` tooling.
+- Intel restore IPSW rows are not shown in the default output because they are
+  not actionable from current official Apple sources.
+
+## `scripts/shared/shared/bootstrap`
+
+This script is the current cross-application shared entrypoint.
+
+Behavior:
+
+1. Detect repo root from the script location.
+2. Run `scripts/shared/brew/brew-install`.
+3. On macOS, run `scripts/macos/system/system-configure` only if the Brew step succeeds.
+4. On Linux, skip macOS-only workflows.
+5. Stop on the first failure.
+
+## `scripts/macos/system/system-configure`
+
+This script applies the managed macOS system settings from `configs/macos/system/`.
+
+Behavior:
+
+1. Detect repo root and current host.
+2. Require macOS and the needed system commands.
+3. Resolve the preferred config with host fallback:
+   - `configs/macos/system/system-settings-<host>.conf`
+   - `configs/macos/system/system-settings-shared.conf`
+4. Apply Dock auto-hide and Spaces ordering only when values differ.
+5. Restart the Dock only when Dock settings changed.
+6. Apply AC power sleep with `pmset` only when the managed value differs.
+7. Use `pmset -c` on portable Macs and `pmset -a` on non-portable Macs.
+8. Append one `Updated` CSV row for each managed setting that actually changes.
+
+The current managed macOS system settings are:
+
+- Dock auto-hide
+- Spaces reordering by recent use
+- AC power system sleep minutes

@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# Shared Homebrew installer.
+#
+# This script resolves layered Brewfiles from:
+# - configs/shared/brew/Brewfile-<host>-<username>
+# - configs/<os>/brew/Brewfile-<host>-<username>
+#
+# Matching order is least specific to most specific:
+# 1. shared OS + shared host
+# 2. shared OS + current host
+# 3. current OS + shared host
+# 4. current OS + current host
+#
+# It installs only missing entries. Already installed formulae and casks are
+# reported and skipped. It does not run `brew update`; update and upgrade
+# behavior belongs in `brew-upgrade`.
+
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../../libs/shared/shared/common.sh"
+
+show_usage() {
+  show_help "Usage: $(basename "$0") [--help]
+
+Install missing Homebrew formulae and casks from the matching layered Brewfiles.
+
+Brewfile naming:
+  Brewfile-<host>-<username>
+
+Resolution order:
+  1. configs/shared/brew/Brewfile-shared-<username>
+  2. configs/shared/brew/Brewfile-<host>-<username>
+  3. configs/<os>/brew/Brewfile-shared-<username>
+  4. configs/<os>/brew/Brewfile-<host>-<username>
+
+Notes:
+  - <host> is either 'shared' or the normalized current hostname.
+  - <username> is the normalized current whoami value.
+  - Only missing entries are installed. Installed entries are skipped.
+  - This command does not run brew update or upgrade installed entries."
+}
+
+# Add a Brewfile to the active layer list when it exists, otherwise report the
+# missing optional layer as an amber skip.
+add_candidate_if_present() {
+  local candidate_path="$1"
+
+  if [[ -f "$candidate_path" ]]; then
+    BREWFILES+=("$candidate_path")
+    print_green "Using Brewfile: $candidate_path"
+  else
+    print_amber "Skipping missing Brewfile: $candidate_path"
+  fi
+}
+
+# Resolve every matching Brewfile layer from least specific to most specific.
+resolve_brewfiles() {
+  local root_path="$1"
+  local os_name="$2"
+  local host_name="$3"
+  local user_name="$4"
+
+  # Load every matching layer so shared files provide a baseline and
+  # host-specific files can add entries on top.
+  BREWFILES=()
+  add_candidate_if_present "$root_path/configs/shared/brew/Brewfile-shared-$user_name"
+  add_candidate_if_present "$root_path/configs/shared/brew/Brewfile-$host_name-$user_name"
+  add_candidate_if_present "$root_path/configs/$os_name/brew/Brewfile-shared-$user_name"
+  add_candidate_if_present "$root_path/configs/$os_name/brew/Brewfile-$host_name-$user_name"
+
+  if [[ ${#BREWFILES[@]} -eq 0 ]]; then
+    fail "No matching Brewfiles found for os=$os_name host=$host_name username=$user_name"
+  fi
+}
+
+# Parse only the supported Brewfile entry forms and fail on any other non-empty
+# directive so the active syntax contract stays narrow and explicit.
+parse_brewfile_entries() {
+  local brewfile_path="$1"
+  local line
+  local trimmed_line
+  local entry_type
+  local remainder
+  local quote_char
+  local entry_name
+  local trailing_content
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    trimmed_line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$trimmed_line" ]] && continue
+    [[ "$trimmed_line" == \#* ]] && continue
+
+    case "$trimmed_line" in
+      brew\ *|cask\ *)
+        entry_type="${trimmed_line%% *}"
+        remainder="${trimmed_line#"$entry_type"}"
+        remainder="${remainder#"${remainder%%[![:space:]]*}"}"
+        quote_char="${remainder:0:1}"
+        if [[ "$quote_char" != '"' && "$quote_char" != "'" ]]; then
+          fail "Unsupported Brewfile line in $brewfile_path: $line"
+        fi
+        entry_name="${remainder#?}"
+        [[ "$entry_name" == *"$quote_char"* ]] || fail "Unsupported Brewfile line in $brewfile_path: $line"
+        entry_name="${entry_name%%"$quote_char"*}"
+        [[ -n "$entry_name" ]] || fail "Unsupported Brewfile line in $brewfile_path: $line"
+        trailing_content="${remainder#"$quote_char$entry_name$quote_char"}"
+        [[ -z "${trailing_content//[[:space:]]/}" ]] || fail "Unsupported Brewfile line in $brewfile_path: $line"
+        printf '%s|%s\n' "$entry_type" "$entry_name"
+        ;;
+      *)
+        fail "Unsupported Brewfile line in $brewfile_path: $line"
+        ;;
+    esac
+  done < "$brewfile_path"
+}
+
+# Check whether a managed Brewfile entry is already installed.
+entry_is_installed() {
+  local entry_type="$1"
+  local entry_name="$2"
+
+  if [[ "$entry_type" == "brew" ]]; then
+    brew list --versions "$entry_name" >/dev/null 2>&1
+  else
+    brew list --cask --versions "$entry_name" >/dev/null 2>&1
+  fi
+}
+
+# Read the installed version string for one Brewfile entry, returning an empty
+# value when Homebrew does not report one.
+installed_entry_version() {
+  local entry_type="$1"
+  local entry_name="$2"
+  local installed_output
+  local version_name
+
+  if [[ "$entry_type" == "brew" ]]; then
+    installed_output="$(brew list --versions "$entry_name" 2>/dev/null || true)"
+  else
+    installed_output="$(brew list --cask --versions "$entry_name" 2>/dev/null || true)"
+  fi
+
+  version_name="${installed_output#"$entry_name"}"
+  version_name="${version_name#"${version_name%%[![:space:]]*}"}"
+  printf '%s\n' "$version_name"
+}
+
+# Read the current Homebrew version token, returning an empty value when it
+# cannot be resolved.
+homebrew_version() {
+  local version_output
+  local first_line
+
+  version_output="$(brew --version 2>/dev/null || true)"
+  first_line="${version_output%%$'\n'*}"
+  first_line="${first_line#Homebrew }"
+
+  if [[ "$first_line" == "$version_output" && "$version_output" != Homebrew* ]]; then
+    printf '\n'
+    return 0
+  fi
+
+  printf '%s\n' "$first_line"
+}
+
+# Install Homebrew when it is missing, then log the bootstrap install.
+bootstrap_homebrew_if_missing() {
+  local version_name
+
+  if command -v brew >/dev/null 2>&1; then
+    return 0
+  fi
+
+  print_amber 'Homebrew is missing; installing Homebrew'
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  load_homebrew_shellenv
+  command -v brew >/dev/null 2>&1 || fail 'Homebrew installation did not provide brew'
+
+  version_name="$(homebrew_version)"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Installed' 'brew' "$version_name"
+  print_green 'Installed brew'
+}
+
+# Install one Brewfile entry only when it is currently missing.
+install_missing_entry() {
+  local entry_type="$1"
+  local entry_name="$2"
+  local version_name
+
+  if entry_is_installed "$entry_type" "$entry_name"; then
+    print_amber "Skipping installed $entry_type: $entry_name"
+    return 0
+  fi
+
+  if [[ "$entry_type" == "brew" ]]; then
+    brew install "$entry_name"
+  else
+    brew install --cask "$entry_name"
+  fi
+
+  version_name="$(installed_entry_version "$entry_type" "$entry_name")"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Installed' "$entry_name" "$version_name"
+  print_green "Installed $entry_type: $entry_name"
+}
+
+# Process one Brewfile completely before moving to the next layer.
+process_brewfile() {
+  local brewfile_path="$1"
+  local entries_file
+  local entry_type
+  local entry_name
+  local status
+
+  entries_file="$(mktemp)"
+  parse_brewfile_entries "$brewfile_path" > "$entries_file"
+
+  if (
+    exec 3< "$entries_file"
+
+    while IFS='|' read -r entry_type entry_name <&3; do
+      [[ -n "$entry_name" ]] || continue
+      install_missing_entry "$entry_type" "$entry_name"
+    done
+  ); then
+    rm -f "$entries_file"
+  else
+    status=$?
+    rm -f "$entries_file"
+    return "$status"
+  fi
+}
+
+# Entrypoint for the active shared Homebrew install workflow.
+main() {
+  local root_path
+  local os_name
+  local host_name
+  local user_name
+  local brewfile_path
+  local version_name
+
+  if is_help_flag "${1-}"; then
+    show_usage
+  fi
+
+  if [[ $# -ne 0 ]]; then
+    fail "brew-install takes no arguments. Use --help for usage."
+  fi
+
+  root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  os_name="$(detect_os)"
+  host_name="$(detect_host)"
+  user_name="$(detect_username)"
+  BREWFILES=()
+  LOG_HOST_NAME="$host_name"
+  LOG_FILE_PATH="$(activity_log_file_path "$root_path" "$os_name" "$host_name")"
+
+  print_green "Context: os=$os_name host=$host_name username=$user_name"
+
+  load_homebrew_shellenv
+  bootstrap_homebrew_if_missing
+  command -v brew >/dev/null 2>&1 || fail 'Homebrew is not installed'
+
+  print_green 'Homebrew found'
+  version_name="$(homebrew_version)"
+  [[ -n "$version_name" ]] && printf 'Homebrew %s\n' "$version_name"
+
+  resolve_brewfiles "$root_path" "$os_name" "$host_name" "$user_name"
+
+  for brewfile_path in "${BREWFILES[@]}"; do
+    process_brewfile "$brewfile_path"
+  done
+
+  print_green 'Done'
+}
+
+main "$@"

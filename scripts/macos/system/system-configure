@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# Apply the managed macOS system settings.
+#
+# This script resolves macOS system config from:
+# - configs/macos/system/system-settings-shared.conf
+# - configs/macos/system/system-settings-<host>.conf
+#
+# Host-specific config overrides the shared file when present.
+#
+# The current managed settings are Dock auto-hide, Spaces ordering by recent
+# use, and AC power system sleep minutes.
+
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../../libs/shared/shared/common.sh"
+
+show_usage() {
+  show_help "Usage: $(basename "$0") [--help]
+
+Apply the managed macOS system settings.
+
+Notes:
+  - Loads the matching host-specific config when present, otherwise the shared fallback.
+  - Requires sudo for the managed pmset change."
+}
+
+require_macos() {
+  [[ "$(detect_os)" == "macos" ]] || fail 'This script is for macOS only'
+}
+
+require_command() {
+  local command_name="$1"
+
+  command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
+}
+
+shared_system_config_path() {
+  local root_path="$1"
+  printf '%s/configs/macos/system/system-settings-shared.conf\n' "$root_path"
+}
+
+# Prefer a host-specific config when present, otherwise use the shared file.
+preferred_system_config_path() {
+  local root_path="$1"
+  local host_name="$2"
+  local host_config
+
+  host_config="$root_path/configs/macos/system/system-settings-$host_name.conf"
+  if [[ -f "$host_config" ]]; then
+    printf '%s\n' "$host_config"
+    return 0
+  fi
+
+  shared_system_config_path "$root_path"
+}
+
+load_system_config() {
+  local config_path="$1"
+
+  [[ -f "$config_path" ]] || fail "Managed macOS system config not found: $config_path"
+  # shellcheck disable=SC1090
+  source "$config_path"
+}
+
+# Convert repo config booleans to the values expected by defaults.
+bool_to_defaults_value() {
+  case "$1" in
+    true) printf 'true\n' ;;
+    false) printf 'false\n' ;;
+    *) fail "Invalid boolean value: $1" ;;
+  esac
+}
+
+# Normalize defaults boolean reads so comparisons stay stable.
+normalize_defaults_bool_value() {
+  case "$1" in
+    1|true) printf 'true\n' ;;
+    0|false) printf 'false\n' ;;
+    *) fail "Invalid defaults boolean value: $1" ;;
+  esac
+}
+
+# Update one Dock boolean key only when the current value differs.
+set_dock_bool() {
+  local key_name="$1"
+  local desired_value="$2"
+  local application_name="$3"
+  local current_value
+
+  current_value="$(defaults read "$SYSTEM_DOCK_DOMAIN" "$key_name" 2>/dev/null || printf '0')"
+  current_value="$(normalize_defaults_bool_value "$current_value")"
+  desired_value="$(bool_to_defaults_value "$desired_value")"
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  defaults write "$SYSTEM_DOCK_DOMAIN" "$key_name" -bool "$desired_value"
+  DOCK_CHANGED='1'
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Updated' "$application_name" ''
+}
+
+# Apply the managed Dock settings as one grouped operation.
+apply_dock_settings() {
+  set_dock_bool "$SYSTEM_DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" 'system-dock-autohide'
+  set_dock_bool "$SYSTEM_DOCK_REORDER_SPACES_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" 'system-dock-mru-spaces'
+}
+
+# Detect whether the current Mac should use the portable pmset scope.
+mac_is_portable() {
+  pmset -g batt 2>/dev/null | grep -q 'InternalBattery'
+}
+
+# Read the current sleep value from the requested pmset section.
+current_pmset_sleep_setting() {
+  local power_section="$1"
+
+  pmset -g custom | awk -v section="$power_section" '
+    $0 == section":" { in_section = 1; next }
+    /^[A-Za-z].*:$/ { in_section = 0 }
+    in_section && $1 == "sleep" { print $2; exit }
+  '
+}
+
+# Apply the managed AC power sleep value only when it differs.
+apply_pmset_sleep() {
+  local desired_value="$1"
+  local scope_flag="$SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE"
+  local current_value
+
+  if mac_is_portable; then
+    scope_flag="$SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE"
+  fi
+
+  current_value="$(current_pmset_sleep_setting "$SYSTEM_PMSET_AC_POWER_SECTION" || true)"
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  sudo -v
+  sudo pmset "$scope_flag" sleep "$desired_value"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Updated' 'system-pmset-sleep' ''
+}
+
+# Validate that every required config value was provided by the chosen file.
+validate_config() {
+  [[ -n "${DOCK_AUTO_HIDE:-}" ]] || fail 'DOCK_AUTO_HIDE is not set in the managed macOS system config'
+  [[ -n "${DOCK_REORDER_SPACES_BY_RECENT_USE:-}" ]] || fail 'DOCK_REORDER_SPACES_BY_RECENT_USE is not set in the managed macOS system config'
+  [[ -n "${AC_POWER_SYSTEM_SLEEP_MINUTES:-}" ]] || fail 'AC_POWER_SYSTEM_SLEEP_MINUTES is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_DOCK_DOMAIN:-}" ]] || fail 'SYSTEM_DOCK_DOMAIN is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_DOCK_AUTO_HIDE_KEY:-}" ]] || fail 'SYSTEM_DOCK_AUTO_HIDE_KEY is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_DOCK_REORDER_SPACES_KEY:-}" ]] || fail 'SYSTEM_DOCK_REORDER_SPACES_KEY is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_PMSET_AC_POWER_SECTION:-}" ]] || fail 'SYSTEM_PMSET_AC_POWER_SECTION is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
+}
+
+main() {
+  local root_path
+  local os_name
+  local host_name
+  local system_config
+
+  if is_help_flag "${1-}"; then
+    show_usage
+  fi
+
+  if [[ $# -ne 0 ]]; then
+    fail 'system-configure takes no arguments. Use --help for usage.'
+  fi
+
+  require_macos
+  require_command defaults
+  require_command grep
+  require_command pmset
+  require_command sudo
+  require_command awk
+  require_command killall
+
+  root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  os_name="$(detect_os)"
+  host_name="$(detect_host)"
+  system_config="$(preferred_system_config_path "$root_path" "$host_name")"
+  DOCK_CHANGED='0'
+  LOG_HOST_NAME="$host_name"
+  LOG_FILE_PATH="$(activity_log_file_path "$root_path" "$os_name" "$host_name")"
+
+  print_green 'Loading managed macOS system config'
+  load_system_config "$system_config"
+  validate_config
+
+  print_green 'Applying Dock settings'
+  apply_dock_settings
+
+  if [[ "$DOCK_CHANGED" == '1' ]]; then
+    killall Dock >/dev/null 2>&1 || true
+  fi
+
+  print_green 'Applying power settings'
+  apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+
+  print_green 'macOS system settings are ready'
+}
+
+main "$@"
