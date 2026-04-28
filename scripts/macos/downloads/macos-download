@@ -90,7 +90,6 @@ main() {
     'MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN' \
     'MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN' \
     'MACOS_DOWNLOAD_STATUS_AVAILABLE' \
-    'MACOS_DOWNLOAD_STATUS_UNAVAILABLE' \
     'MACOS_DOWNLOAD_SELECTION_PROMPT' \
     'MACOS_DOWNLOAD_QUIT_TOKEN' \
     'MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS' \
@@ -110,7 +109,6 @@ main() {
   require_config_value 'MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN'
   require_config_value 'MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN'
   require_config_value 'MACOS_DOWNLOAD_STATUS_AVAILABLE'
-  require_config_value 'MACOS_DOWNLOAD_STATUS_UNAVAILABLE'
   require_config_value 'MACOS_DOWNLOAD_SELECTION_PROMPT'
   require_config_value 'MACOS_DOWNLOAD_QUIT_TOKEN'
   require_config_value 'MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS'
@@ -211,7 +209,6 @@ installer_label = os.environ['MACOS_DOWNLOAD_INSTALLER_LABEL']
 ipsw_artifact_token = os.environ['MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN']
 installer_artifact_token = os.environ['MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN']
 status_available = os.environ['MACOS_DOWNLOAD_STATUS_AVAILABLE']
-status_unavailable = os.environ['MACOS_DOWNLOAD_STATUS_UNAVAILABLE']
 selection_prompt = os.environ['MACOS_DOWNLOAD_SELECTION_PROMPT']
 quit_token = os.environ['MACOS_DOWNLOAD_QUIT_TOKEN']
 warning_no_downloads = os.environ['MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS']
@@ -257,14 +254,10 @@ for arch in ('arm', 'x86'):
         reverse=True,
     )
     for (version, build, artifact), meta in entries:
-        status = status_available if meta['available'] else status_unavailable
         build_text = f' ({build})' if artifact == ipsw_artifact_token and build else ''
-        if meta['available']:
-          selection_map[str(next_number)] = (version, build, artifact, meta)
-          print(f"{next_number}. {version}{build_text} | {artifact} | {meta['label']} | {status}")
-          next_number += 1
-        else:
-          print(f"{version}{build_text} | {artifact} | {meta['label']} | {status}")
+        selection_map[str(next_number)] = (version, build, artifact, meta)
+        print(f"{next_number}. {version}{build_text} | {artifact} | {meta['label']} | {status_available}")
+        next_number += 1
     if arch == 'arm':
         print()
 
@@ -306,7 +299,6 @@ PY
   MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN="$MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN" \
   MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN="$MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN" \
   MACOS_DOWNLOAD_STATUS_AVAILABLE="$MACOS_DOWNLOAD_STATUS_AVAILABLE" \
-  MACOS_DOWNLOAD_STATUS_UNAVAILABLE="$MACOS_DOWNLOAD_STATUS_UNAVAILABLE" \
   MACOS_DOWNLOAD_SELECTION_PROMPT="$MACOS_DOWNLOAD_SELECTION_PROMPT" \
   MACOS_DOWNLOAD_QUIT_TOKEN="$MACOS_DOWNLOAD_QUIT_TOKEN" \
   MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="$MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS" \

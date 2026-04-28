@@ -622,21 +622,51 @@ test_active_files_are_documented() {
 }
 
 test_gitignore_repo_hygiene_rules() {
-  if [[ "$(sed -n '1p' "$ROOT/.gitignore")" != '.DS_Store' ]]; then
-    fail '.gitignore should keep hidden entries first'
-  fi
+  local entries=()
+  local hidden_entries=()
+  local visible_entries=()
+  local line
+  local index
+  local previous
 
-  if [[ "$(sed -n '2p' "$ROOT/.gitignore")" != '.worktrees/' ]]; then
-    fail '.gitignore should keep hidden entries in alphabetical order'
-  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" ]] || continue
+    entries+=("$line")
+    if [[ "$line" == .* ]]; then
+      hidden_entries+=("$line")
+    else
+      visible_entries+=("$line")
+    fi
+  done < "$ROOT/.gitignore"
 
-  if [[ "$(sed -n '3p' "$ROOT/.gitignore")" != '/downloads/' ]]; then
-    fail '.gitignore should ignore the repo-local downloads/ before logs/'
-  fi
+  [[ " ${entries[*]} " == *' /downloads/ '* ]] || fail '.gitignore should ignore the repo-local downloads/'
+  [[ " ${entries[*]} " == *' /logs/ '* ]] || fail '.gitignore should ignore the repo-local logs/'
 
-  if [[ "$(sed -n '4p' "$ROOT/.gitignore")" != '/logs/' ]]; then
-    fail '.gitignore should ignore the repo-local logs/'
-  fi
+  for ((index = 0; index < ${#entries[@]}; index++)); do
+    if [[ "${entries[$index]}" != .* ]]; then
+      break
+    fi
+  done
+
+  for ((; index < ${#entries[@]}; index++)); do
+    [[ "${entries[$index]}" != .* ]] || fail '.gitignore should keep hidden entries before non-hidden entries'
+  done
+
+  previous=''
+  for line in "${hidden_entries[@]}"; do
+    if [[ -n "$previous" && "$line" < "$previous" ]]; then
+      fail '.gitignore should keep hidden entries in alphabetical order'
+    fi
+    previous="$line"
+  done
+
+  previous=''
+  for line in "${visible_entries[@]}"; do
+    if [[ -n "$previous" && "$line" < "$previous" ]]; then
+      fail '.gitignore should keep non-hidden entries in alphabetical order'
+    fi
+    previous="$line"
+  done
 }
 
 test_logs_new_installs_to_csv() {
@@ -815,6 +845,36 @@ EOF
   assert_contains "$output_file" 'ERROR: Required config not found:' 'brew installer should fail clearly when the config file is missing'
 }
 
+test_requires_brew_installer_values_from_config_file() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/shared/brew/brew-install-shared.conf" <<'EOF'
+# Shared Homebrew installer runtime defaults for all supported OS scopes and account names.
+#
+# This file owns external bootstrap values used by scripts/shared/brew/brew-install.
+# Missing required brew installer config is a hard failure.
+EOF
+
+  if HOMEBREW_INSTALL_URL='https://example.invalid/install.sh' run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail when a required brew installer value is missing from config even if exported in the environment'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Required config value is not set: HOMEBREW_INSTALL_URL' 'requires brew installer values to be defined by the config file itself'
+}
+
 test_handles_multiline_brew_version_output() {
   local temp_dir
   local output_file
@@ -908,6 +968,7 @@ test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it
 test_fails_clearly_when_bootstrap_curl_is_missing
 test_requires_brew_installer_config_file
+test_requires_brew_installer_values_from_config_file
 test_handles_multiline_brew_version_output
 test_requires_logging_values_from_config_file
 test_active_shell_files_pass_bash_syntax_check
