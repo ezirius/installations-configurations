@@ -14,7 +14,7 @@ The current active workflows are:
 
 - Homebrew installation through layered Brewfiles
 - Apple Mac restore images and full installer downloads from Apple's official sources
-- macOS system configuration through layered system settings files
+- macOS system configuration with host-specific override and shared fallback settings files
 
 ## Active Files
 
@@ -85,6 +85,8 @@ Where:
 
 - `<host>` is either `shared` or the current hostname normalized to lowercase up to the first `.`
 - `<username>` is `whoami`, normalized to lowercase with non-alphanumeric characters converted to `-`
+- leading and trailing `-` characters are trimmed
+- repeated `-` characters are collapsed
 
 Examples:
 

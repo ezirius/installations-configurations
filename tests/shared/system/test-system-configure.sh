@@ -476,6 +476,39 @@ test_enforces_false_dock_value_when_key_is_unset() {
   assert_not_contains "$temp_dir/state/sudo.log" '-v' 'unchanged pmset value should still skip sudo'
 }
 
+test_skips_dock_restart_when_dock_settings_are_already_correct() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_config "$temp_dir"
+
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should succeed when Dock and pmset settings are already correct'
+  fi
+
+  assert_not_contains "$temp_dir/state/defaults.log" 'write com.apple.dock' 'does not rewrite unchanged Dock settings'
+  assert_not_contains "$temp_dir/state/killall.log" 'Dock' 'does not restart Dock when no Dock settings changed'
+  assert_not_contains "$temp_dir/state/sudo.log" '-v' 'does not request sudo when pmset is already correct'
+  if [[ -f "$log_file" ]]; then
+    assert_not_contains "$log_file" 'system-dock-' 'does not log unchanged Dock settings'
+    assert_not_contains "$log_file" 'system-pmset-sleep' 'does not log unchanged pmset setting'
+  fi
+}
+
 # Verify top-level documentation headers for the active system files.
 test_documentation_headers() {
   assert_starts_with_comment "$ROOT/configs/macos/system/system-settings-shared.conf" 'system config should start with a header comment'
@@ -492,6 +525,7 @@ test_applies_shared_system_config_on_portable_mac
 test_prefers_host_specific_override_and_skips_unchanged_sleep
 test_applies_non_portable_sleep_change_with_a_scope
 test_enforces_false_dock_value_when_key_is_unset
+test_skips_dock_restart_when_dock_settings_are_already_correct
 test_documentation_headers
 
 printf 'PASS: tests/shared/system/test-system-configure.sh\n'

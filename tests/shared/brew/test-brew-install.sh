@@ -589,7 +589,30 @@ test_active_files_are_documented() {
   assert_contains "$ROOT/tests/shared/shared/test-bootstrap.sh" 'This test covers:' 'active bootstrap test header should describe covered behaviors'
   assert_contains "$ROOT/tests/shared/system/test-system-configure.sh" 'This test covers:' 'active system test header should describe covered behaviors'
   assert_contains "$ROOT/README.md" 'All active scripts, libs, tests, configs, and docs should be well documented.' 'README should state the documentation requirement'
+  assert_contains "$ROOT/README.md" '- macOS system configuration with host-specific override and shared fallback settings files' 'README should describe the current system config fallback model'
+  assert_contains "$ROOT/README.md" '- `<host>` is either `shared` or the current hostname normalized to lowercase up to the first `.`' 'README should document host normalisation'
+  assert_contains "$ROOT/README.md" '- `<username>` is `whoami`, normalized to lowercase with non-alphanumeric characters converted to `-`' 'README should document username normalisation'
+  assert_contains "$ROOT/README.md" '- leading and trailing `-` characters are trimmed' 'README should document trimming dash runs'
+  assert_contains "$ROOT/README.md" '- repeated `-` characters are collapsed' 'README should document collapsing repeated dashes'
   assert_contains "$ROOT/AGENTS.md" 'Every active script, config, shared library, test file, and doc must be well documented.' 'AGENTS should state the documentation requirement'
+}
+
+test_gitignore_repo_hygiene_rules() {
+  if [[ "$(sed -n '1p' "$ROOT/.gitignore")" != '.DS_Store' ]]; then
+    fail '.gitignore should keep hidden entries first'
+  fi
+
+  if [[ "$(sed -n '2p' "$ROOT/.gitignore")" != '.worktrees/' ]]; then
+    fail '.gitignore should keep hidden entries in alphabetical order'
+  fi
+
+  if [[ "$(sed -n '3p' "$ROOT/.gitignore")" != '/downloads/' ]]; then
+    fail '.gitignore should ignore the repo-local downloads/ before logs/'
+  fi
+
+  if [[ "$(sed -n '4p' "$ROOT/.gitignore")" != '/logs/' ]]; then
+    fail '.gitignore should ignore the repo-local logs/'
+  fi
 }
 
 test_logs_new_installs_to_csv() {
@@ -818,6 +841,7 @@ test_cleans_up_temp_files_when_brewfile_parse_fails
 test_rejects_single_quoted_brew_entry
 test_rejects_single_quoted_cask_entry
 test_active_files_are_documented
+test_gitignore_repo_hygiene_rules
 test_logs_new_installs_to_csv
 test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it

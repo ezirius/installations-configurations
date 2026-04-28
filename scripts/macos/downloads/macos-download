@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+# List and download official Apple macOS restore images and full installers.
+#
+# This script combines Apple's public macOS IPSW catalog for Apple Silicon
+# restore images with Apple's softwareupdate full installer listings. It groups
+# available downloads into `ARM` and `X86` sections and lets the user select
+# one official Apple artifact to download.
+
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../../libs/shared/shared/common.sh"
+
+show_usage() {
+  show_help "Usage: $(basename "$0") [--help]
+
+List and download official Apple macOS restore images and full installers.
+
+Output sections:
+  ARM
+  X86
+
+Artifact types:
+  IPSW
+  Installer
+
+Notes:
+  - Uses Apple's public macOS IPSW catalog for Apple Silicon restore images.
+  - Uses softwareupdate full installer listings for macOS installers.
+  - Defaults IPSW downloads into downloads/macos/downloads under the repo root.
+  - Select a downloadable item by number, or enter q to quit."
+}
+
+require_command() {
+  local command_name="$1"
+
+  command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
+}
+
+require_macos() {
+  [[ "$(detect_os)" == 'macos' ]] || fail 'This script is for macOS only'
+}
+
+fetch_catalog_payload() {
+  curl -fsSL "$MACOS_DOWNLOAD_CATALOG_URL"
+}
+
+fetch_installer_listing() {
+  softwareupdate --list-full-installers
+}
+
+main() {
+  local catalog_file=''
+  local installers_file=''
+  local parser_file=''
+  local root_path
+  local download_dir
+
+  cleanup_temp_files() {
+    [[ -n "$catalog_file" ]] && rm -f "$catalog_file"
+    [[ -n "$installers_file" ]] && rm -f "$installers_file"
+    [[ -n "$parser_file" ]] && rm -f "$parser_file"
+    trap - EXIT
+  }
+
+  if is_help_flag "${1-}"; then
+    show_usage
+  fi
+
+  if [[ $# -ne 0 ]]; then
+    fail 'macos-download takes no arguments. Use --help for usage.'
+  fi
+
+  require_macos
+  require_command curl
+  require_command python3
+  require_command softwareupdate
+
+  root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  clear_config_values \
+    'MACOS_DOWNLOAD_CATALOG_URL' \
+    'MACOS_DOWNLOAD_DIR_RELATIVE' \
+    'MACOS_DOWNLOAD_ARM_SECTION_LABEL' \
+    'MACOS_DOWNLOAD_X86_SECTION_LABEL' \
+    'MACOS_DOWNLOAD_IPSW_LABEL' \
+    'MACOS_DOWNLOAD_INSTALLER_LABEL' \
+    'MACOS_DOWNLOAD_ARM_INSTALLER_MIN_VERSION' \
+    'MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN' \
+    'MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN' \
+    'MACOS_DOWNLOAD_STATUS_AVAILABLE' \
+    'MACOS_DOWNLOAD_STATUS_UNAVAILABLE' \
+    'MACOS_DOWNLOAD_SELECTION_PROMPT' \
+    'MACOS_DOWNLOAD_QUIT_TOKEN' \
+    'MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS' \
+    'MACOS_DOWNLOAD_WARNING_NO_SELECTION' \
+    'MACOS_DOWNLOAD_ERROR_INVALID_SELECTION' \
+    'MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX' \
+    'MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX' \
+    'MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE'
+  load_required_config "$root_path" 'configs/macos/downloads/macos-download-shared.conf'
+  require_config_value 'MACOS_DOWNLOAD_CATALOG_URL'
+  require_config_value 'MACOS_DOWNLOAD_DIR_RELATIVE'
+  require_config_value 'MACOS_DOWNLOAD_ARM_SECTION_LABEL'
+  require_config_value 'MACOS_DOWNLOAD_X86_SECTION_LABEL'
+  require_config_value 'MACOS_DOWNLOAD_IPSW_LABEL'
+  require_config_value 'MACOS_DOWNLOAD_INSTALLER_LABEL'
+  require_config_value 'MACOS_DOWNLOAD_ARM_INSTALLER_MIN_VERSION'
+  require_config_value 'MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN'
+  require_config_value 'MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN'
+  require_config_value 'MACOS_DOWNLOAD_STATUS_AVAILABLE'
+  require_config_value 'MACOS_DOWNLOAD_STATUS_UNAVAILABLE'
+  require_config_value 'MACOS_DOWNLOAD_SELECTION_PROMPT'
+  require_config_value 'MACOS_DOWNLOAD_QUIT_TOKEN'
+  require_config_value 'MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS'
+  require_config_value 'MACOS_DOWNLOAD_WARNING_NO_SELECTION'
+  require_config_value 'MACOS_DOWNLOAD_ERROR_INVALID_SELECTION'
+  require_config_value 'MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX'
+  require_config_value 'MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX'
+  require_config_value 'MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE'
+  download_dir="$root_path/$MACOS_DOWNLOAD_DIR_RELATIVE"
+
+  trap cleanup_temp_files EXIT
+  catalog_file="$(mktemp)"
+  installers_file="$(mktemp)"
+  parser_file="$(mktemp)"
+  fetch_catalog_payload > "$catalog_file"
+  fetch_installer_listing > "$installers_file"
+
+  cat > "$parser_file" <<'PY'
+import os
+import plistlib
+import re
+import subprocess
+import sys
+
+
+def version_key(version: str):
+    parts = []
+    for token in version.split('.'):
+        try:
+            parts.append(int(token))
+        except ValueError:
+            parts.append(0)
+    while len(parts) < 5:
+        parts.append(0)
+    return tuple(parts)
+
+
+def colorize(kind: str, message: str):
+    if not sys.stdout.isatty():
+        return message
+    colors = {'green': '\033[32m', 'amber': '\033[33m', 'red': '\033[31m'}
+    return f"{colors[kind]}{message}\033[0m"
+
+
+def extract_restore_entries(node, current_model=None):
+    entries = []
+    if isinstance(node, dict):
+        if 'Restore' in node and isinstance(node['Restore'], dict):
+            restore = node['Restore']
+            firmware_url = restore.get('FirmwareURL')
+            product_version = restore.get('ProductVersion')
+            build_version = restore.get('BuildVersion') or restore.get('Build')
+            # Only UniversalMac restore images are actionable Apple Silicon IPSWs
+            # from Apple's current public catalog contract.
+            if isinstance(firmware_url, str) and isinstance(product_version, str) and isinstance(build_version, str) and 'UniversalMac_' in firmware_url:
+                entries.append((product_version, build_version, firmware_url))
+        for key, value in node.items():
+            next_model = current_model
+            if isinstance(key, str):
+                next_model = key
+            entries.extend(extract_restore_entries(value, next_model))
+    elif isinstance(node, list):
+        for value in node:
+            entries.extend(extract_restore_entries(value, current_model))
+    return entries
+
+
+def installer_arch(version: str):
+    if version_key(version) >= version_key(os.environ['MACOS_DOWNLOAD_ARM_INSTALLER_MIN_VERSION']):
+        return ['arm', 'x86']
+    return ['x86']
+
+
+def artifact_priority(artifact: str):
+    return 0 if artifact == os.environ['MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN'] else 1
+
+
+def build_key(build: str):
+    parts = []
+    for token in re.findall(r'[0-9]+|[A-Za-z]+', build):
+        if token.isdigit():
+            parts.append((0, int(token)))
+        else:
+            parts.append((1, token))
+    return tuple(parts)
+
+
+with open(sys.argv[1], 'rb') as handle:
+    catalog = plistlib.load(handle)
+with open(sys.argv[2], 'r', encoding='utf-8') as handle:
+    installer_listing = handle.read().splitlines()
+
+download_dir = sys.argv[3]
+arm_section_label = os.environ['MACOS_DOWNLOAD_ARM_SECTION_LABEL']
+x86_section_label = os.environ['MACOS_DOWNLOAD_X86_SECTION_LABEL']
+ipsw_label = os.environ['MACOS_DOWNLOAD_IPSW_LABEL']
+installer_label = os.environ['MACOS_DOWNLOAD_INSTALLER_LABEL']
+ipsw_artifact_token = os.environ['MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN']
+installer_artifact_token = os.environ['MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN']
+status_available = os.environ['MACOS_DOWNLOAD_STATUS_AVAILABLE']
+status_unavailable = os.environ['MACOS_DOWNLOAD_STATUS_UNAVAILABLE']
+selection_prompt = os.environ['MACOS_DOWNLOAD_SELECTION_PROMPT']
+quit_token = os.environ['MACOS_DOWNLOAD_QUIT_TOKEN']
+warning_no_downloads = os.environ['MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS']
+warning_no_selection = os.environ['MACOS_DOWNLOAD_WARNING_NO_SELECTION']
+error_invalid_selection = os.environ['MACOS_DOWNLOAD_ERROR_INVALID_SELECTION']
+success_ipsw_prefix = os.environ['MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX']
+success_installer_prefix = os.environ['MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX']
+installer_destination_note = os.environ['MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE']
+section_labels = {'arm': arm_section_label, 'x86': x86_section_label}
+grouped = {'arm': {}, 'x86': {}}
+selection_map = {}
+
+for version, build, url in extract_restore_entries(catalog):
+    grouped['arm'][(version, build, ipsw_artifact_token)] = {
+        'artifact': ipsw_artifact_token,
+        'label': ipsw_label,
+        'available': True,
+        'mode': 'url',
+        'value': url,
+    }
+
+installer_pattern = re.compile(r'^\* Title: .*?, Version: ([0-9]+(?:\.[0-9]+)*), Size: .*?, Build: ([^, ]+)(?:,.*)?$')
+for line in installer_listing:
+    match = installer_pattern.match(line.strip())
+    if not match:
+        continue
+    version, build = match.groups()
+    for arch in installer_arch(version):
+        grouped[arch][(version, build, installer_artifact_token)] = {
+            'artifact': installer_artifact_token,
+            'label': installer_label,
+            'available': True,
+            'mode': 'softwareupdate',
+            'value': version,
+        }
+
+next_number = 1
+for arch in ('arm', 'x86'):
+    print(section_labels[arch])
+    entries = sorted(
+        grouped[arch].items(),
+        key=lambda item: (version_key(item[0][0]), build_key(item[0][1]), -artifact_priority(item[0][2])),
+        reverse=True,
+    )
+    for (version, build, artifact), meta in entries:
+        status = status_available if meta['available'] else status_unavailable
+        build_text = f' ({build})' if artifact == ipsw_artifact_token and build else ''
+        if meta['available']:
+          selection_map[str(next_number)] = (version, build, artifact, meta)
+          print(f"{next_number}. {version}{build_text} | {artifact} | {meta['label']} | {status}")
+          next_number += 1
+        else:
+          print(f"{version}{build_text} | {artifact} | {meta['label']} | {status}")
+    if arch == 'arm':
+        print()
+
+if not selection_map:
+    print(colorize('amber', warning_no_downloads))
+    raise SystemExit(0)
+
+print()
+while True:
+    try:
+        selection = input(selection_prompt).strip()
+    except EOFError:
+        print(colorize('amber', warning_no_selection))
+        raise SystemExit(0)
+    if selection.lower() == quit_token.lower():
+        raise SystemExit(0)
+    if selection not in selection_map:
+        print(colorize('red', error_invalid_selection))
+        continue
+    break
+
+version, build, artifact, meta = selection_map[selection]
+if meta['mode'] == 'url':
+    os.makedirs(download_dir, exist_ok=True)
+    target_path = os.path.join(download_dir, f'{version}-{build}.ipsw')
+    subprocess.run(['curl', '-fL', '-o', target_path, meta['value']], check=True)
+    print(colorize('green', f'{success_ipsw_prefix} {version} ({build}) to {target_path}'))
+else:
+    subprocess.run(['softwareupdate', '--fetch-full-installer', '--full-installer-version', meta['value']], check=True)
+    print(colorize('green', f'{success_installer_prefix} {meta["value"]}'))
+    print(installer_destination_note)
+PY
+
+  MACOS_DOWNLOAD_ARM_SECTION_LABEL="$MACOS_DOWNLOAD_ARM_SECTION_LABEL" \
+  MACOS_DOWNLOAD_X86_SECTION_LABEL="$MACOS_DOWNLOAD_X86_SECTION_LABEL" \
+  MACOS_DOWNLOAD_IPSW_LABEL="$MACOS_DOWNLOAD_IPSW_LABEL" \
+  MACOS_DOWNLOAD_INSTALLER_LABEL="$MACOS_DOWNLOAD_INSTALLER_LABEL" \
+  MACOS_DOWNLOAD_ARM_INSTALLER_MIN_VERSION="$MACOS_DOWNLOAD_ARM_INSTALLER_MIN_VERSION" \
+  MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN="$MACOS_DOWNLOAD_IPSW_ARTIFACT_TOKEN" \
+  MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN="$MACOS_DOWNLOAD_INSTALLER_ARTIFACT_TOKEN" \
+  MACOS_DOWNLOAD_STATUS_AVAILABLE="$MACOS_DOWNLOAD_STATUS_AVAILABLE" \
+  MACOS_DOWNLOAD_STATUS_UNAVAILABLE="$MACOS_DOWNLOAD_STATUS_UNAVAILABLE" \
+  MACOS_DOWNLOAD_SELECTION_PROMPT="$MACOS_DOWNLOAD_SELECTION_PROMPT" \
+  MACOS_DOWNLOAD_QUIT_TOKEN="$MACOS_DOWNLOAD_QUIT_TOKEN" \
+  MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="$MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS" \
+  MACOS_DOWNLOAD_WARNING_NO_SELECTION="$MACOS_DOWNLOAD_WARNING_NO_SELECTION" \
+  MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="$MACOS_DOWNLOAD_ERROR_INVALID_SELECTION" \
+  MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="$MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX" \
+  MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX="$MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX" \
+  MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE="$MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE" \
+  python3 "$parser_file" "$catalog_file" "$installers_file" "$download_dir"
+
+  cleanup_temp_files
+}
+
+main "$@"
