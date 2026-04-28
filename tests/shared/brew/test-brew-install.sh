@@ -72,12 +72,20 @@ assert_starts_with_heading() {
 make_fake_repo() {
   local temp_dir="$1"
 
-  mkdir -p "$temp_dir/scripts/shared/brew" "$temp_dir/configs/shared/brew" "$temp_dir/configs/macos/brew" "$temp_dir/fake-bin" "$temp_dir/libs/shared"
+  mkdir -p \
+    "$temp_dir/scripts/shared/brew" \
+    "$temp_dir/configs/shared/brew" \
+    "$temp_dir/configs/shared/shared" \
+    "$temp_dir/configs/macos/brew" \
+    "$temp_dir/fake-bin" \
+    "$temp_dir/libs/shared"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/shared/brew/brew-install"
   if [[ -f "$ROOT/libs/shared/shared/common.sh" ]]; then
     mkdir -p "$temp_dir/libs/shared/shared"
     cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
   fi
+  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
+  cp "$ROOT/configs/shared/brew/brew-install-shared.conf" "$temp_dir/configs/shared/brew/brew-install-shared.conf"
   chmod +x "$temp_dir/scripts/shared/brew/brew-install"
 }
 
@@ -475,8 +483,65 @@ EOF
   assert_contains "$output_file" 'Unsupported Brewfile line' 'rejects Brewfile entries with trailing content'
 }
 
+test_rejects_single_quoted_brew_entry() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew 'ripgrep'
+EOF
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should reject single-quoted brew entries'
+  fi
+
+  assert_contains "$output_file" 'Unsupported Brewfile line' 'rejects single-quoted brew entries'
+}
+
+test_rejects_single_quoted_cask_entry() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+cask 'ghostty'
+EOF
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should reject single-quoted cask entries'
+  fi
+
+  assert_contains "$output_file" 'Unsupported Brewfile line' 'rejects single-quoted cask entries'
+}
+
 test_active_files_are_documented() {
   assert_starts_with_comment "$ROOT/configs/macos/brew/Brewfile-shared-ezirius" 'active Brewfile should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/brew/brew-install-shared.conf" 'shared brew runtime config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/shared/logging-shared.conf" 'shared logging config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/macos/downloads/macos-download-shared.conf" 'macos downloads runtime config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/macos/system/system-settings-shared.conf" 'active system config should start with a header comment'
   assert_starts_with_comment "$ROOT/libs/shared/shared/common.sh" 'shared library should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/scripts/shared/brew/brew-install" 'active script should start with a header comment after shebang'
@@ -608,6 +673,43 @@ EOF
   assert_not_contains "$temp_dir/state/brew.log" 'update' 'bootstrap path should not run brew update'
 }
 
+test_fails_clearly_when_bootstrap_curl_is_missing() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  rm -f "$temp_dir/fake-bin/curl"
+  write_command_stub "$temp_dir/fake-bin/dirname" '#!/usr/bin/env bash
+exec /usr/bin/dirname "$@"'
+  write_command_stub "$temp_dir/fake-bin/tr" '#!/usr/bin/env bash
+exec /usr/bin/tr "$@"'
+  write_command_stub "$temp_dir/fake-bin/sed" '#!/usr/bin/env bash
+exec /usr/bin/sed "$@"'
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if TEST_STATE_DIR="$temp_dir/state" \
+    TEST_FAKE_BIN="$temp_dir/fake-bin" \
+    HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV=1 \
+    PATH="$temp_dir/fake-bin:/bin:/usr/sbin:/sbin" \
+    "$temp_dir/scripts/shared/brew/brew-install" > "$output_file" 2>&1; then
+    fail 'script should fail clearly when curl is missing during Homebrew bootstrap'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Required command is missing: curl' 'bootstrap path should fail clearly when curl is unavailable'
+}
+
 test_handles_multiline_brew_version_output() {
   local temp_dir
   local output_file
@@ -644,10 +746,13 @@ test_help_output
 test_rejects_positional_arguments
 test_rejects_invalid_brewfile_line
 test_rejects_brewfile_line_with_trailing_content
+test_rejects_single_quoted_brew_entry
+test_rejects_single_quoted_cask_entry
 test_active_files_are_documented
 test_logs_new_installs_to_csv
 test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it
+test_fails_clearly_when_bootstrap_curl_is_missing
 test_handles_multiline_brew_version_output
 
 printf 'PASS: tests/shared/brew/test-brew-install.sh\n'

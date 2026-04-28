@@ -26,7 +26,10 @@ also active under the same repo layout.
 
 The current active implementation surface is:
 
+- `configs/shared/shared/logging-shared.conf`
+- `configs/shared/brew/brew-install-shared.conf`
 - `configs/macos/brew/Brewfile-shared-ezirius`
+- `configs/macos/downloads/macos-download-shared.conf`
 - `configs/macos/system/system-settings-shared.conf`
 - `libs/shared/shared/common.sh`
 - `scripts/shared/brew/brew-install`
@@ -39,6 +42,12 @@ The current active implementation surface is:
 - `tests/shared/system/test-system-configure.sh`
 
 Keep rules, documentation, and behavior aligned with these files.
+
+External runtime values must live under `configs/`.
+This includes URLs, default paths, labels, tokens, headers, and similar
+operational defaults.
+Test fixtures may remain inline in tests.
+Missing required runtime config files are hard failures.
 
 ## Naming Rules
 
@@ -71,6 +80,7 @@ System config currently follows this path pattern under:
 
 Download workflows currently follow this path pattern under:
 
+- `configs/macos/downloads/macos-download-shared.conf`
 - `scripts/macos/downloads/macos-download`
 - `tests/shared/downloads/test-macos-download.sh`
 
@@ -115,9 +125,19 @@ Allowed non-entry lines:
 
 Behavior is strict:
 
+- only double-quoted `brew` and `cask` entries are supported
+- single-quoted entries are unsupported
+- inline trailing comments are unsupported
 - unsupported non-empty lines fail clearly
 - unsupported directives must never be ignored silently
 - do not broaden Brewfile syntax unless the parser and tests are updated together
+
+Layering rules:
+
+- the same token may appear in more than one Brewfile layer
+- layered files are processed in resolution order
+- entries are additive; there is no override syntax
+- already installed entries are skipped at install time
 
 ## Shared Code Rules
 
@@ -142,6 +162,10 @@ It is the right place for:
 - OS, host, and username detection
 - generic Homebrew shellenv loading
 - generic activity log helpers
+
+Shared logging defaults used by those helpers must come from:
+
+- `configs/shared/shared/logging-shared.conf`
 
 It is not the right place for:
 
@@ -195,9 +219,13 @@ When the system workflow changes a managed setting, log it as:
 
 ## Implementation Rules
 
+- Always keep the code as simple as possible.
 - Prefer the smallest practical change.
 - Always use superpowers and TDD for all tasks.
 - Use TDD for behavioral changes and refactors that can affect behavior.
+- Keep all external values in `configs/` for scripts and libraries.
+- Do not make scripts declarative just to move external values out of code.
+- This rule does not apply to test files; test fixtures may remain in tests.
 - Keep shell code compatible with the current macOS Bash environment.
 - Prefer simple portable shell patterns over newer Bash-only features when a
   compatible alternative exists.
@@ -211,6 +239,10 @@ When the system workflow changes a managed setting, log it as:
 - For the current shared installer workflow, prefer a dedicated fixed file
   descriptor for loop input so child commands like `brew` cannot consume
   Brewfile entries and force partial installs across multiple runs.
+- Clean up `mktemp` artifacts on both success and failure paths in active
+  scripts.
+- Prefer shell patterns that avoid `pipefail` surprises on success paths, such
+  as avoiding `... | head -n1` when a direct helper can return the same value.
 
 ## Testing Rules
 
@@ -228,9 +260,21 @@ When the system workflow changes a managed setting, log it as:
 - Run shell syntax checks on changed scripts and libraries.
 - When changing shared path conventions, update the fake repo test layout first
   so tests fail on the old contract before runtime code is changed.
+- Prefer behavior-based assertions over brittle absolute numbering in
+  interactive download tests.
+- When an interactive selection depends on rendered menu ordering, derive the
+  selector from captured output instead of hard-coding menu numbers.
+- Cover strict parser behavior in tests, including unsupported trailing content
+  on otherwise valid-looking Brewfile lines.
 
 ## Documentation Rules
 
+- Be concise in user-facing responses.
+- Use tables where they improve clarity.
+- Use British English in user-facing writing and documentation.
+- Use the metric system in user-facing writing and documentation.
+- When a domain normally uses imperial units as the standard reference, write measurements as metric first followed by imperial in parentheses.
+- Always keep all scripts, code, libraries, tests, and configs well documented.
 - Every active script, config, shared library, test file, and doc must be well documented.
 - Add short header comments to active scripts and config files when the contract
   is not obvious from the filename alone.
@@ -243,6 +287,24 @@ When the system workflow changes a managed setting, log it as:
 - Keep active docs precise and aligned with the current file layout and behavior.
 - Keep `README.md` aligned with the current active layout, not deleted legacy
   paths.
+
+## Repo Hygiene Rules
+
+- Ignore repo-local runtime artifacts such as `downloads/` and `logs/`.
+- Keep `.gitignore` ordered with hidden entries first, then non-hidden entries,
+  and alphabetical order within each group.
+
+## Git Rules
+
+- Match the current commit title style: short imperative subject with a type
+  prefix such as `fix:` or `refactor:`.
+- Scope commit messages to the actual worktree. If the diff includes repo
+  layout consolidation and workflow replacement, prefer a `refactor:` framing
+  over a narrow `fix:` title.
+- SSH commit signing on this machine uses 1Password's SSH agent. For terminal
+  commits, ensure `SSH_AUTH_SOCK` points to:
+  `/Users/ezirius/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`
+  when signing is required.
 
 ## Current Brewfile Resolution Order
 

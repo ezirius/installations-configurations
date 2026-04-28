@@ -56,6 +56,49 @@ is_help_flag() {
   [[ "${1-}" == "-h" || "${1-}" == "--help" ]]
 }
 
+# Resolve one config file path relative to the repo root.
+required_config_path() {
+  local root_path="$1"
+  local relative_path="$2"
+
+  printf '%s/%s\n' "$root_path" "$relative_path"
+}
+
+# Load one required shell config file from the repo.
+load_required_config() {
+  local root_path="$1"
+  local relative_path="$2"
+  local config_path
+
+  config_path="$(required_config_path "$root_path" "$relative_path")"
+  [[ -f "$config_path" ]] || fail "Required config not found: $config_path"
+
+  # shellcheck disable=SC1090
+  source "$config_path"
+}
+
+# Fail when one required config value is unset or empty.
+require_config_value() {
+  local variable_name="$1"
+
+  [[ -n "${!variable_name:-}" ]] || fail "Required config value is not set: $variable_name"
+}
+
+# Load the shared logging config used by active install and system workflows.
+load_shared_logging_config() {
+  local root_path="$1"
+
+  load_required_config "$root_path" 'configs/shared/shared/logging-shared.conf'
+  require_config_value 'ACTIVITY_LOG_TIMEZONE'
+  require_config_value 'ACTIVITY_LOG_ROOT_RELATIVE'
+  require_config_value 'ACTIVITY_LOG_SCOPE_SUBDIR'
+  require_config_value 'ACTIVITY_LOG_FILE_PREFIX'
+  require_config_value 'ACTIVITY_LOG_CSV_HEADER'
+  require_config_value 'ACTION_INSTALLED'
+  require_config_value 'ACTION_UPDATED'
+  require_config_value 'ACTION_REMOVED'
+}
+
 # Resolve the repository root from the path of a script inside
 # scripts/<scope>/<application>/.
 repo_root_from_script_path() {
@@ -122,12 +165,12 @@ load_homebrew_shellenv() {
 
 # Return the current South Africa date for activity logging.
 current_sa_date() {
-  TZ='Africa/Johannesburg' date '+%Y%m%d'
+  TZ="$ACTIVITY_LOG_TIMEZONE" date '+%Y%m%d'
 }
 
 # Return the current South Africa time for activity logging.
 current_sa_time() {
-  TZ='Africa/Johannesburg' date '+%H%M%S'
+  TZ="$ACTIVITY_LOG_TIMEZONE" date '+%H%M%S'
 }
 
 # Build the activity log file path for one OS and normalized host.
@@ -136,7 +179,13 @@ activity_log_file_path() {
   local os_name="$2"
   local host_name="$3"
 
-  printf '%s/logs/%s/shared/installations-and-configurations-%s.csv\n' "$root_path" "$os_name" "$host_name"
+  printf '%s/%s/%s/%s/%s-%s.csv\n' \
+    "$root_path" \
+    "$ACTIVITY_LOG_ROOT_RELATIVE" \
+    "$os_name" \
+    "$ACTIVITY_LOG_SCOPE_SUBDIR" \
+    "$ACTIVITY_LOG_FILE_PREFIX" \
+    "$host_name"
 }
 
 # Create the activity log file and header when it does not yet exist.
@@ -148,7 +197,7 @@ ensure_activity_log_file() {
   mkdir -p "$log_dir"
 
   if [[ ! -f "$log_file_path" ]]; then
-    printf 'date,time,host,action,application,version\n' > "$log_file_path"
+    printf '%s\n' "$ACTIVITY_LOG_CSV_HEADER" > "$log_file_path"
   fi
 }
 

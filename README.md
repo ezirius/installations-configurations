@@ -20,7 +20,10 @@ The current active workflows are:
 
 The current active implementation surface is:
 
+- `configs/shared/shared/logging-shared.conf`
+- `configs/shared/brew/brew-install-shared.conf`
 - `configs/macos/brew/Brewfile-shared-ezirius`
+- `configs/macos/downloads/macos-download-shared.conf`
 - `configs/macos/system/system-settings-shared.conf`
 - `libs/shared/shared/common.sh`
 - `scripts/shared/brew/brew-install`
@@ -35,6 +38,12 @@ The current active implementation surface is:
 These files are the current source of truth for the active Brew, downloads,
 bootstrap, and system workflows.
 Repository documentation should stay aligned with them.
+
+External runtime values must live under `configs/`.
+This includes URLs, default paths, labels, tokens, headers, and similar
+operational defaults.
+Test fixtures may remain inline in tests.
+Missing required runtime config files are hard failures.
 
 All active scripts, libs, tests, configs, and docs should be well documented.
 
@@ -112,9 +121,14 @@ brew "formula-name"
 cask "cask-name"
 ```
 
-Blank lines and comment lines beginning with `#` are ignored.
+Blank lines and full-line comments beginning with `#` are ignored.
+Single-quoted entries and inline trailing comments are rejected.
 Any other non-empty line is rejected as an error so unsupported Brewfile
 directives do not fail silently.
+
+The same token may appear in more than one Brewfile layer.
+Layered entries are additive, processed in resolution order, and there is no
+override syntax.
 
 ## `scripts/shared/brew/brew-install`
 
@@ -150,6 +164,10 @@ It owns generic helpers for:
 - OS, host, and username detection
 - Homebrew shell environment loading
 - South Africa activity-log timestamps and CSV log helpers
+
+Shared logging defaults used by those helpers are loaded from:
+
+- `configs/shared/shared/logging-shared.conf`
 
 Script-specific workflow logic should stay in the calling script instead of
 being moved into `libs/shared/shared/common.sh` too early.
@@ -198,6 +216,10 @@ Current action values:
 Dates and times are written in South Africa time using the
 `Africa/Johannesburg` timezone.
 
+Those shared logging defaults are configured in:
+
+- `configs/shared/shared/logging-shared.conf`
+
 ## Tests
 
 The current scripts are covered by:
@@ -233,6 +255,10 @@ Behavior:
 7. Lets the user select one downloadable entry by number.
 8. Sorts each section newest to oldest by version and build.
 9. Supports `--help` and takes no positional arguments.
+
+External macOS download defaults are configured in:
+
+- `configs/macos/downloads/macos-download-shared.conf`
 
 Note:
 
@@ -275,3 +301,5 @@ The current managed macOS system settings are:
 - Dock auto-hide
 - Spaces reordering by recent use
 - AC power system sleep minutes
+
+Managed setting log tokens also come from the system config file.

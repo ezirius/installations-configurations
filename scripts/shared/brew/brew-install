@@ -2,7 +2,9 @@
 # Shared Homebrew installer.
 #
 # This script resolves layered Brewfiles from:
+# - configs/shared/brew/Brewfile-shared-<username>
 # - configs/shared/brew/Brewfile-<host>-<username>
+# - configs/<os>/brew/Brewfile-shared-<username>
 # - configs/<os>/brew/Brewfile-<host>-<username>
 #
 # Matching order is least specific to most specific:
@@ -41,6 +43,12 @@ Notes:
   - <username> is the normalized current whoami value.
   - Only missing entries are installed. Installed entries are skipped.
   - This command does not run brew update or upgrade installed entries."
+}
+
+require_command() {
+  local command_name="$1"
+
+  command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
 }
 
 # Add a Brewfile to the active layer list when it exists, otherwise report the
@@ -99,7 +107,7 @@ parse_brewfile_entries() {
         remainder="${trimmed_line#"$entry_type"}"
         remainder="${remainder#"${remainder%%[![:space:]]*}"}"
         quote_char="${remainder:0:1}"
-        if [[ "$quote_char" != '"' && "$quote_char" != "'" ]]; then
+        if [[ "$quote_char" != '"' ]]; then
           fail "Unsupported Brewfile line in $brewfile_path: $line"
         fi
         entry_name="${remainder#?}"
@@ -174,14 +182,15 @@ bootstrap_homebrew_if_missing() {
     return 0
   fi
 
+  require_command curl
   print_amber 'Homebrew is missing; installing Homebrew'
-  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "$HOMEBREW_INSTALL_URL")"
 
   load_homebrew_shellenv
   command -v brew >/dev/null 2>&1 || fail 'Homebrew installation did not provide brew'
 
   version_name="$(homebrew_version)"
-  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Installed' 'brew' "$version_name"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_INSTALLED" 'brew' "$version_name"
   print_green 'Installed brew'
 }
 
@@ -203,7 +212,7 @@ install_missing_entry() {
   fi
 
   version_name="$(installed_entry_version "$entry_type" "$entry_name")"
-  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Installed' "$entry_name" "$version_name"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_INSTALLED" "$entry_name" "$version_name"
   print_green "Installed $entry_type: $entry_name"
 }
 
@@ -252,6 +261,9 @@ main() {
   fi
 
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  load_shared_logging_config "$root_path"
+  load_required_config "$root_path" 'configs/shared/brew/brew-install-shared.conf'
+  require_config_value 'HOMEBREW_INSTALL_URL'
   os_name="$(detect_os)"
   host_name="$(detect_host)"
   user_name="$(detect_username)"

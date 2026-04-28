@@ -31,6 +31,7 @@ Notes:
 main() {
   local root_path
   local os_name
+  local system_configure_path
 
   if is_help_flag "${1-}"; then
     show_usage
@@ -46,11 +47,12 @@ main() {
   print_green 'Running brew-install'
   "$root_path/scripts/shared/brew/brew-install"
 
-  if [[ "$os_name" == 'macos' && -x "$root_path/scripts/macos/system/system-configure" ]]; then
+  system_configure_path="$root_path/scripts/macos/system/system-configure"
+  if [[ "$os_name" == 'macos' && -x "$system_configure_path" ]]; then
     print_green 'Running system-configure'
-    "$root_path/scripts/macos/system/system-configure"
+    "$system_configure_path"
   elif [[ "$os_name" == 'macos' ]]; then
-    print_amber 'Skipping missing macOS system-configure workflow'
+    fail 'Required macOS workflow is missing or not executable: scripts/macos/system/system-configure'
   fi
 
   print_green 'Bootstrap complete'

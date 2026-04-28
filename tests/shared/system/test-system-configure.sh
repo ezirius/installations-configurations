@@ -60,11 +60,13 @@ make_fake_repo() {
 
   mkdir -p \
     "$temp_dir/scripts/macos/system" \
+    "$temp_dir/configs/shared/shared" \
     "$temp_dir/configs/macos/system" \
     "$temp_dir/fake-bin" \
     "$temp_dir/libs/shared/shared"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/macos/system/system-configure"
   cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
+  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
   chmod +x "$temp_dir/scripts/macos/system/system-configure"
 }
 
@@ -200,7 +202,10 @@ AC_POWER_SYSTEM_SLEEP_MINUTES=0
 SYSTEM_DOCK_DOMAIN="com.apple.dock"
 SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
 SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
+SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
+SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
 SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
+SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
 SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
 SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
 EOF
@@ -308,7 +313,10 @@ AC_POWER_SYSTEM_SLEEP_MINUTES=10
 SYSTEM_DOCK_DOMAIN="com.apple.dock"
 SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
 SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
+SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
+SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
 SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
+SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
 SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
 SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
 EOF

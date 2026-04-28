@@ -100,13 +100,13 @@ set_dock_bool() {
 
   defaults write "$SYSTEM_DOCK_DOMAIN" "$key_name" -bool "$desired_value"
   DOCK_CHANGED='1'
-  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Updated' "$application_name" ''
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$application_name" ''
 }
 
 # Apply the managed Dock settings as one grouped operation.
 apply_dock_settings() {
-  set_dock_bool "$SYSTEM_DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" 'system-dock-autohide'
-  set_dock_bool "$SYSTEM_DOCK_REORDER_SPACES_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" 'system-dock-mru-spaces'
+  set_dock_bool "$SYSTEM_DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" "$SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN"
+  set_dock_bool "$SYSTEM_DOCK_REORDER_SPACES_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" "$SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN"
 }
 
 # Detect whether the current Mac should use the portable pmset scope.
@@ -142,7 +142,7 @@ apply_pmset_sleep() {
 
   sudo -v
   sudo pmset "$scope_flag" sleep "$desired_value"
-  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" 'Updated' 'system-pmset-sleep' ''
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_PMSET_SLEEP_LOG_TOKEN" ''
 }
 
 # Validate that every required config value was provided by the chosen file.
@@ -153,7 +153,10 @@ validate_config() {
   [[ -n "${SYSTEM_DOCK_DOMAIN:-}" ]] || fail 'SYSTEM_DOCK_DOMAIN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_DOCK_AUTO_HIDE_KEY:-}" ]] || fail 'SYSTEM_DOCK_AUTO_HIDE_KEY is not set in the managed macOS system config'
   [[ -n "${SYSTEM_DOCK_REORDER_SPACES_KEY:-}" ]] || fail 'SYSTEM_DOCK_REORDER_SPACES_KEY is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN:-}" ]] || fail 'SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN:-}" ]] || fail 'SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_AC_POWER_SECTION:-}" ]] || fail 'SYSTEM_PMSET_AC_POWER_SECTION is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_PMSET_SLEEP_LOG_TOKEN:-}" ]] || fail 'SYSTEM_PMSET_SLEEP_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
 }
@@ -181,6 +184,7 @@ main() {
   require_command killall
 
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  load_shared_logging_config "$root_path"
   os_name="$(detect_os)"
   host_name="$(detect_host)"
   system_config="$(preferred_system_config_path "$root_path" "$host_name")"

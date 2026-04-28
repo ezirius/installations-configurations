@@ -62,10 +62,12 @@ make_fake_repo() {
     "$temp_dir/scripts/shared/shared" \
     "$temp_dir/scripts/shared/brew" \
     "$temp_dir/scripts/macos/system" \
+    "$temp_dir/configs/shared/shared" \
     "$temp_dir/fake-bin" \
     "$temp_dir/libs/shared/shared"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/shared/shared/bootstrap"
   cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
+  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
   chmod +x "$temp_dir/scripts/shared/shared/bootstrap"
 }
 
@@ -226,6 +228,31 @@ printf "%s\n" "brew-install" >> "$TEST_STATE_DIR/calls.log"'
   assert_not_contains "$call_log" 'system-configure' 'bootstrap should skip macOS-only system-configure on Linux'
 }
 
+test_fails_on_macos_when_system_configure_is_missing() {
+  local temp_dir
+  local output_file
+  local call_log
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  call_log="$temp_dir/state/calls.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  write_child_script "$temp_dir/scripts/shared/brew/brew-install" '#!/usr/bin/env bash
+printf "%s\n" "brew-install" >> "$TEST_STATE_DIR/calls.log"'
+  rm -f "$temp_dir/scripts/macos/system/system-configure"
+  setup_common_stubs "$temp_dir"
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'bootstrap should fail on macOS when system-configure is missing'
+  fi
+
+  assert_contains "$call_log" 'brew-install' 'bootstrap should still run brew-install first'
+  assert_contains "$output_file" 'ERROR: Required macOS workflow is missing or not executable' 'bootstrap should fail clearly when system-configure is missing'
+}
+
 test_documentation_headers() {
   assert_starts_with_comment "$ROOT/scripts/shared/shared/bootstrap" 'bootstrap script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/shared/test-bootstrap.sh" 'bootstrap test should start with a header comment after shebang'
@@ -236,6 +263,7 @@ test_rejects_positional_arguments
 test_runs_brew_then_system
 test_stops_when_brew_fails
 test_runs_only_shared_workflows_on_linux
+test_fails_on_macos_when_system_configure_is_missing
 test_documentation_headers
 
 printf 'PASS: tests/shared/shared/test-bootstrap.sh\n'
