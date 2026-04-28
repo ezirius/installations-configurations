@@ -84,10 +84,29 @@ require_config_value() {
   [[ -n "${!variable_name:-}" ]] || fail "Required config value is not set: $variable_name"
 }
 
+# Clear config-owned values before sourcing so missing keys cannot be satisfied
+# accidentally by exported shell environment variables.
+clear_config_values() {
+  local variable_name
+
+  for variable_name in "$@"; do
+    unset "$variable_name"
+  done
+}
+
 # Load the shared logging config used by active install and system workflows.
 load_shared_logging_config() {
   local root_path="$1"
 
+   clear_config_values \
+    'ACTIVITY_LOG_TIMEZONE' \
+    'ACTIVITY_LOG_ROOT_RELATIVE' \
+    'ACTIVITY_LOG_SCOPE_SUBDIR' \
+    'ACTIVITY_LOG_FILE_PREFIX' \
+    'ACTIVITY_LOG_CSV_HEADER' \
+    'ACTION_INSTALLED' \
+    'ACTION_UPDATED' \
+    'ACTION_REMOVED'
   load_required_config "$root_path" 'configs/shared/shared/logging-shared.conf'
   require_config_value 'ACTIVITY_LOG_TIMEZONE'
   require_config_value 'ACTIVITY_LOG_ROOT_RELATIVE'

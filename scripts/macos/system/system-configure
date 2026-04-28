@@ -61,6 +61,19 @@ load_system_config() {
   local config_path="$1"
 
   [[ -f "$config_path" ]] || fail "Managed macOS system config not found: $config_path"
+  clear_config_values \
+    'DOCK_AUTO_HIDE' \
+    'DOCK_REORDER_SPACES_BY_RECENT_USE' \
+    'AC_POWER_SYSTEM_SLEEP_MINUTES' \
+    'SYSTEM_DOCK_DOMAIN' \
+    'SYSTEM_DOCK_AUTO_HIDE_KEY' \
+    'SYSTEM_DOCK_REORDER_SPACES_KEY' \
+    'SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN' \
+    'SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN' \
+    'SYSTEM_PMSET_AC_POWER_SECTION' \
+    'SYSTEM_PMSET_SLEEP_LOG_TOKEN' \
+    'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' \
+    'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE'
   # shellcheck disable=SC1090
   source "$config_path"
 }
@@ -88,10 +101,14 @@ set_dock_bool() {
   local key_name="$1"
   local desired_value="$2"
   local application_name="$3"
+  local read_value
   local current_value
 
-  current_value="$(defaults read "$SYSTEM_DOCK_DOMAIN" "$key_name" 2>/dev/null || printf '0')"
-  current_value="$(normalize_defaults_bool_value "$current_value")"
+  if read_value="$(defaults read "$SYSTEM_DOCK_DOMAIN" "$key_name" 2>/dev/null)"; then
+    current_value="$(normalize_defaults_bool_value "$read_value")"
+  else
+    current_value='__unset__'
+  fi
   desired_value="$(bool_to_defaults_value "$desired_value")"
 
   if [[ "$current_value" == "$desired_value" ]]; then
@@ -111,18 +128,23 @@ apply_dock_settings() {
 
 # Detect whether the current Mac should use the portable pmset scope.
 mac_is_portable() {
-  pmset -g batt 2>/dev/null | grep -q 'InternalBattery'
+  local battery_output
+
+  battery_output="$(pmset -g batt 2>/dev/null || true)"
+  [[ "$battery_output" == *'InternalBattery'* ]]
 }
 
 # Read the current sleep value from the requested pmset section.
 current_pmset_sleep_setting() {
   local power_section="$1"
+  local pmset_output
 
-  pmset -g custom | awk -v section="$power_section" '
+  pmset_output="$(pmset -g custom 2>/dev/null || true)"
+  awk -v section="$power_section" '
     $0 == section":" { in_section = 1; next }
     /^[A-Za-z].*:$/ { in_section = 0 }
     in_section && $1 == "sleep" { print $2; exit }
-  '
+  ' <<< "$pmset_output"
 }
 
 # Apply the managed AC power sleep value only when it differs.

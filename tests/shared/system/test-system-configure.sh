@@ -116,8 +116,18 @@ printf "%s\n" "$*" >> "$STATE_DIR/defaults.log"
 case "$1" in
   read)
     case "$3" in
-      autohide) printf "%s\n" "${TEST_DEFAULTS_AUTO_HIDE_CURRENT:-0}" ;;
-      mru-spaces) printf "%s\n" "${TEST_DEFAULTS_MRU_SPACES_CURRENT:-0}" ;;
+      autohide)
+        if [[ "${TEST_DEFAULTS_AUTO_HIDE_MISSING:-0}" == "1" ]]; then
+          exit 1
+        fi
+        printf "%s\n" "${TEST_DEFAULTS_AUTO_HIDE_CURRENT:-0}"
+        ;;
+      mru-spaces)
+        if [[ "${TEST_DEFAULTS_MRU_SPACES_MISSING:-0}" == "1" ]]; then
+          exit 1
+        fi
+        printf "%s\n" "${TEST_DEFAULTS_MRU_SPACES_CURRENT:-0}"
+        ;;
       *) exit 1 ;;
     esac
     ;;
@@ -336,6 +346,65 @@ EOF
   assert_not_contains "$log_file" 'system-pmset-sleep' 'does not log unchanged pmset setting'
 }
 
+test_applies_non_portable_sleep_change_with_a_scope() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_config "$temp_dir"
+
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=10 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should apply a changed non-portable sleep setting'
+  fi
+
+  assert_contains "$temp_dir/state/sudo.log" '-v' 'validates sudo before non-portable pmset change'
+  assert_contains "$temp_dir/state/pmset.log" '-a sleep 0' 'uses non-portable pmset scope on desktop Macs'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs changed non-portable pmset setting'
+}
+
+test_enforces_false_dock_value_when_key_is_unset() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_config "$temp_dir"
+
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_MISSING=1 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should write managed false values when defaults keys are unset'
+  fi
+
+  assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool false' 'writes missing Dock key for managed false value'
+  assert_contains "$temp_dir/state/killall.log" 'Dock' 'restarts Dock when an unset key is enforced'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs enforced false Dock value when key was unset'
+  assert_not_contains "$temp_dir/state/sudo.log" '-v' 'unchanged pmset value should still skip sudo'
+}
+
 # Verify top-level documentation headers for the active system files.
 test_documentation_headers() {
   assert_starts_with_comment "$ROOT/configs/macos/system/system-settings-shared.conf" 'system config should start with a header comment'
@@ -347,6 +416,8 @@ test_help_output
 test_rejects_positional_arguments
 test_applies_shared_system_config_on_portable_mac
 test_prefers_host_specific_override_and_skips_unchanged_sleep
+test_applies_non_portable_sleep_change_with_a_scope
+test_enforces_false_dock_value_when_key_is_unset
 test_documentation_headers
 
 printf 'PASS: tests/shared/system/test-system-configure.sh\n'

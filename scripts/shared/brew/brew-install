@@ -225,7 +225,13 @@ process_brewfile() {
   local status
 
   entries_file="$(mktemp)"
-  parse_brewfile_entries "$brewfile_path" > "$entries_file"
+  if (parse_brewfile_entries "$brewfile_path" > "$entries_file"); then
+    :
+  else
+    status=$?
+    rm -f "$entries_file"
+    return "$status"
+  fi
 
   if (
     exec 3< "$entries_file"
@@ -262,6 +268,7 @@ main() {
 
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
   load_shared_logging_config "$root_path"
+  clear_config_values 'HOMEBREW_INSTALL_URL'
   load_required_config "$root_path" 'configs/shared/brew/brew-install-shared.conf'
   require_config_value 'HOMEBREW_INSTALL_URL'
   os_name="$(detect_os)"

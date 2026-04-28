@@ -483,6 +483,36 @@ EOF
   assert_contains "$output_file" 'Unsupported Brewfile line' 'rejects Brewfile entries with trailing content'
 }
 
+test_cleans_up_temp_files_when_brewfile_parse_fails() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state" "$temp_dir/tmp"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "ripgrep" trailing-content
+EOF
+
+  if TMPDIR="$temp_dir/tmp" run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should reject Brewfile entries with trailing content'
+  fi
+
+  assert_contains "$output_file" 'Unsupported Brewfile line' 'rejects invalid Brewfile lines during parse'
+  if [[ -n "$(ls -A "$temp_dir/tmp")" ]]; then
+    fail 'brew-install should clean up temporary files when Brewfile parsing fails'
+  fi
+}
+
 test_rejects_single_quoted_brew_entry() {
   local temp_dir
   local output_file
@@ -739,6 +769,44 @@ EOF
   assert_contains "$temp_dir/state/brew.log" 'install nushell' 'continues installs after printing brew version'
 }
 
+test_requires_logging_values_from_config_file() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/shared/shared/logging-shared.conf" <<'EOF'
+# Shared logging defaults for all supported OS scopes and account names.
+ACTIVITY_LOG_ROOT_RELATIVE="logs"
+ACTIVITY_LOG_SCOPE_SUBDIR="shared"
+ACTIVITY_LOG_FILE_PREFIX="installations-and-configurations"
+ACTIVITY_LOG_CSV_HEADER="date,time,host,action,application,version"
+ACTION_INSTALLED="Installed"
+ACTION_UPDATED="Updated"
+ACTION_REMOVED="Removed"
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ACTIVITY_LOG_TIMEZONE='Africa/Johannesburg' run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail when a required logging value is missing from config even if exported in the environment'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Required config value is not set: ACTIVITY_LOG_TIMEZONE' 'requires logging values to be defined by the config file itself'
+}
+
 test_selects_layered_brewfiles_and_installs_missing_only
 test_fails_when_no_matching_brewfiles_exist
 test_selects_linux_brewfiles
@@ -746,6 +814,7 @@ test_help_output
 test_rejects_positional_arguments
 test_rejects_invalid_brewfile_line
 test_rejects_brewfile_line_with_trailing_content
+test_cleans_up_temp_files_when_brewfile_parse_fails
 test_rejects_single_quoted_brew_entry
 test_rejects_single_quoted_cask_entry
 test_active_files_are_documented
@@ -754,5 +823,6 @@ test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it
 test_fails_clearly_when_bootstrap_curl_is_missing
 test_handles_multiline_brew_version_output
+test_requires_logging_values_from_config_file
 
 printf 'PASS: tests/shared/brew/test-brew-install.sh\n'
