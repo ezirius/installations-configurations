@@ -21,9 +21,11 @@ Run the active shared setup workflow.
 
 Steps:
   1. brew-install
-  2. system-configure
+  2. system-configure on macOS only
 
 Notes:
+  - On macOS, fails if system-configure is missing or not executable.
+  - On Linux, skips macOS-only workflows.
   - Stops on the first failure.
   - Takes no positional arguments."
 }

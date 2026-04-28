@@ -48,7 +48,7 @@ Missing required runtime config files are hard failures.
 All active scripts, libs, tests, configs, and docs should be well documented.
 
 Active test files should include a short header that describes the covered
-behaviors and the isolation approach used by the test.
+behaviours and the isolation approach used by the test.
 
 Shared entrypoint scripts should accept only no arguments or `--help` / `-h`.
 Any other argument should fail with:
@@ -83,8 +83,8 @@ Brewfile-<host>-<username>
 
 Where:
 
-- `<host>` is either `shared` or the current hostname normalized to lowercase up to the first `.`
-- `<username>` is `whoami`, normalized to lowercase with non-alphanumeric characters converted to `-`
+- `<host>` is either `shared` or the current hostname normalised to lowercase up to the first `.`
+- `<username>` is `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`
 - leading and trailing `-` characters are trimmed
 - repeated `-` characters are collapsed
 
@@ -100,8 +100,8 @@ Examples:
 `scripts/shared/brew/brew-install` detects:
 
 - OS: `macos` or `linux`
-- host: normalized hostname
-- username: normalized `whoami`
+- host: normalised hostname
+- username: normalised `whoami`
 
 It then loads every matching Brewfile in this order:
 
@@ -136,7 +136,7 @@ override syntax.
 
 This script is the current shared Homebrew installer entrypoint.
 
-Behavior:
+Behaviour:
 
 1. Detect repo root from the script location.
 2. Detect OS, host, and username.
@@ -151,8 +151,8 @@ Behavior:
 11. Do not run `brew update` or upgrade already installed entries.
 
 The script does not implement architecture selection. Homebrew handles ARM/x86 selection.
-`brew-upgrade` is the intended workflow for updating Homebrew metadata and
-upgrading managed entries.
+Homebrew metadata updates and package upgrades are currently outside this
+workflow's scope.
 
 ## `libs/shared/shared/common.sh`
 
@@ -246,7 +246,7 @@ This script lists official Apple macOS restore images and full installers,
 groups them by architecture, and lets the user download one official Apple
 artifact.
 
-Behavior:
+Behaviour:
 
 1. Uses Apple's public macOS IPSW catalog as the official direct source for Apple Silicon restore images.
 2. Uses `softwareupdate --list-full-installers` and `--fetch-full-installer` for official full installer downloads.
@@ -273,19 +273,20 @@ Note:
 
 This script is the current cross-application shared entrypoint.
 
-Behavior:
+Behaviour:
 
 1. Detect repo root from the script location.
 2. Run `scripts/shared/brew/brew-install`.
 3. On macOS, run `scripts/macos/system/system-configure` only if the Brew step succeeds.
-4. On Linux, skip macOS-only workflows.
-5. Stop on the first failure.
+4. On macOS, fail if `scripts/macos/system/system-configure` is missing or not executable.
+5. On Linux, skip macOS-only workflows.
+6. Stop on the first failure.
 
 ## `scripts/macos/system/system-configure`
 
 This script applies the managed macOS system settings from `configs/macos/system/`.
 
-Behavior:
+Behaviour:
 
 1. Detect repo root and current host.
 2. Require macOS and the needed system commands.

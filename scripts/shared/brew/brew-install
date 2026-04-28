@@ -14,8 +14,8 @@
 # 4. current OS + current host
 #
 # It installs only missing entries. Already installed formulae and casks are
-# reported and skipped. It does not run `brew update`; update and upgrade
-# behavior belongs in `brew-upgrade`.
+# reported and skipped. It does not run `brew update` or upgrade installed
+# entries.
 
 set -euo pipefail
 
@@ -39,8 +39,8 @@ Resolution order:
   4. configs/<os>/brew/Brewfile-<host>-<username>
 
 Notes:
-  - <host> is either 'shared' or the normalized current hostname.
-  - <username> is the normalized current whoami value.
+  - <host> is either 'shared' or the normalised current hostname.
+  - <username> is the normalised current whoami value.
   - Only missing entries are installed. Installed entries are skipped.
   - This command does not run brew update or upgrade installed entries."
 }

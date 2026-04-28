@@ -92,8 +92,8 @@ Brewfile-<host>-<username>
 
 Where:
 
-- `<host>` is either `shared` or the normalized current hostname.
-- `<username>` is the normalized `whoami` value.
+- `<host>` is either `shared` or the normalised current hostname.
+- `<username>` is the normalised `whoami` value.
 
 Normalization rules:
 
@@ -194,7 +194,7 @@ For shared entrypoint CLI output, keep the contract simple:
 - Write activity logs under `logs/<os>/shared/`.
 - Use one per-host CSV file: `installations-and-configurations-<host>.csv`.
 - The CSV header is: `date,time,host,action,application,version`.
-- Use normalized host names in both the filename and CSV rows.
+- Use normalised host names in both the filename and CSV rows.
 - Use brew and cask tokens in the `application` column.
 - Use South Africa time via the `Africa/Johannesburg` timezone.
 - If a version cannot be resolved after a successful operation, log an empty version field.
@@ -281,7 +281,7 @@ When the system workflow changes a managed setting, log it as:
 - Add short header comments to active shared libraries when their role is not
   obvious from the filename alone.
 - Add a short header comment to each active test file describing covered
-  behaviors and the isolation approach when it is not obvious from the filename.
+  behaviours and the isolation approach when it is not obvious from the filename.
 - Treat missing or weak documentation in active files as a defect to fix, not as
   optional cleanup.
 - Keep active docs precise and aligned with the current file layout and behavior.
@@ -350,7 +350,8 @@ Additional current behavior:
 - creates the CSV header automatically when the log file does not exist
 - isolates Brewfile processing input from child commands so one run can process
   the full Brewfile reliably
-- leaves Homebrew metadata updates and package upgrades to `brew-upgrade`
+- leaves Homebrew metadata updates and package upgrades out of the current
+  workflow scope
 
 ## Current Shared Paths
 
@@ -395,10 +396,11 @@ Important current limitation:
 1. detects repo root from the script path
 2. runs `scripts/shared/brew/brew-install`
 3. runs `scripts/macos/system/system-configure` only if the Brew step succeeds on macOS
-4. skips macOS-only workflows on Linux
-5. stops on the first failure
-6. supports `--help`
-7. takes no positional arguments
+4. fails on macOS when `scripts/macos/system/system-configure` is missing or not executable
+5. skips macOS-only workflows on Linux
+6. stops on the first failure
+7. supports `--help`
+8. takes no positional arguments
 
 ## Current System Behavior
 

@@ -546,7 +546,7 @@ test_lists_ipsw_and_installers_by_architecture() {
   assert_matches "$output_file" '^[0-9]+\. 26\.4\.1 \| Installer \| macOS full installer \| Download available$' 'lists newest ARM installer entry'
   assert_matches "$output_file" '^[0-9]+\. 26\.3 \(25D125\) \| IPSW \| Apple Silicon Mac restore image \| Download available$' 'lists older ARM IPSW entry'
   assert_matches "$output_file" '^[0-9]+\. 26\.3 \| Installer \| macOS full installer \| Download available$' 'lists older ARM installer entry'
-  assert_matches "$output_file" '^[0-9]+\. 14\.8\.5 \| Installer \| macOS full installer \| Download available$' 'lists Ventura-and-later installer coverage'
+  assert_matches "$output_file" '^[0-9]+\. 14\.8\.5 \| Installer \| macOS full installer \| Download available$' 'lists Sonoma installer coverage'
   assert_matches "$output_file" '^[0-9]+\. 12\.7\.6 \| Installer \| macOS full installer \| Download available$' 'lists Monterey installer coverage'
   assert_not_contains "$output_file" '13.7.4 (22H123) | IPSW' 'does not show non-actionable Intel IPSW rows in default output'
   assert_not_contains "$output_file" '13.7.5 (22H124) | IPSW' 'does not show comma-style Intel model IPSW rows in default output'
