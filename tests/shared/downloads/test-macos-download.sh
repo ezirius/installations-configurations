@@ -362,8 +362,31 @@ test_help_output() {
   fi
 
   assert_contains "$output_file" 'Usage: macos-download' 'shows macos-download help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags'
   assert_contains "$output_file" 'IPSW' 'documents IPSW artifact type'
   assert_contains "$output_file" 'Installer' 'documents installer artifact type'
+}
+
+test_short_help_output() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  write_download_config "$temp_dir"
+
+  if ! "$temp_dir/scripts/macos/downloads/macos-download" -h > "$output_file" 2>&1; then
+    cat "$output_file" >&2
+    fail 'macos-download should show short help successfully'
+  fi
+
+  assert_contains "$output_file" 'Usage: macos-download' 'shows macos-download short help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags in short help'
+  assert_contains "$output_file" 'IPSW' 'documents IPSW artifact type in short help'
+  assert_contains "$output_file" 'Installer' 'documents installer artifact type in short help'
 }
 
 test_rejects_positional_arguments() {
@@ -926,6 +949,7 @@ exit 1'
 }
 
 test_help_output
+test_short_help_output
 test_rejects_positional_arguments
 test_requires_macos
 test_honours_configured_section_labels

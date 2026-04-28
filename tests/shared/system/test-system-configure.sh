@@ -238,7 +238,29 @@ test_help_output() {
   fi
 
   assert_contains "$output_file" 'Usage: system-configure' 'shows system help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags'
   assert_contains "$output_file" 'Requires sudo for the managed pmset change.' 'documents sudo requirement'
+}
+
+test_short_help_output() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  if ! PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/system/system-configure" -h > "$output_file" 2>&1; then
+    cat "$output_file" >&2
+    fail 'system-configure should show short help successfully'
+  fi
+
+  assert_contains "$output_file" 'Usage: system-configure' 'shows system short help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags in short help'
+  assert_contains "$output_file" 'Requires sudo for the managed pmset change.' 'documents sudo requirement in short help'
 }
 
 test_rejects_positional_arguments() {
@@ -517,6 +539,7 @@ test_documentation_headers() {
 }
 
 test_help_output
+test_short_help_output
 test_rejects_positional_arguments
 test_requires_macos
 test_requires_system_config_file

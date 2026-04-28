@@ -121,8 +121,31 @@ test_help_output() {
   fi
 
   assert_contains "$output_file" 'Usage: bootstrap' 'shows bootstrap help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags'
   assert_contains "$output_file" 'brew-install' 'documents brew-install step'
   assert_contains "$output_file" 'system-configure' 'documents system-configure step'
+}
+
+test_short_help_output() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  if ! "$temp_dir/scripts/shared/shared/bootstrap" -h > "$output_file" 2>&1; then
+    cat "$output_file" >&2
+    fail 'bootstrap should show short help successfully'
+  fi
+
+  assert_contains "$output_file" 'Usage: bootstrap' 'shows bootstrap short help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags in short help'
+  assert_contains "$output_file" 'brew-install' 'documents brew-install step in short help'
+  assert_contains "$output_file" 'system-configure' 'documents system-configure step in short help'
 }
 
 test_rejects_positional_arguments() {
@@ -259,6 +282,7 @@ test_documentation_headers() {
 }
 
 test_help_output
+test_short_help_output
 test_rejects_positional_arguments
 test_runs_brew_then_system
 test_stops_when_brew_fails

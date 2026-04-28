@@ -406,7 +406,31 @@ test_help_output() {
   fi
 
   assert_contains "$output_file" 'Usage: brew-install' 'shows help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags'
   assert_contains "$output_file" 'Brewfile-<host>-<username>' 'documents Brewfile naming in help'
+}
+
+test_short_help_output() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  if ! PATH="$temp_dir/fake-bin:$PATH" "$temp_dir/scripts/shared/brew/brew-install" -h > "$output_file" 2>&1; then
+    cat "$output_file" >&2
+    fail 'script should show short help successfully'
+  fi
+
+  assert_contains "$output_file" 'Usage: brew-install' 'shows short help usage'
+  assert_contains "$output_file" '[-h|--help]' 'documents both help flags in short help'
+  assert_contains "$output_file" 'Brewfile-<host>-<username>' 'documents Brewfile naming in short help'
 }
 
 test_rejects_positional_arguments() {
@@ -763,6 +787,34 @@ EOF
   assert_contains "$output_file" 'ERROR: Required command is missing: curl' 'bootstrap path should fail clearly when curl is unavailable'
 }
 
+test_requires_brew_installer_config_file() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+  rm -f "$temp_dir/configs/shared/brew/brew-install-shared.conf"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail when the required brew installer config file is missing'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Required config not found:' 'brew installer should fail clearly when the config file is missing'
+}
+
 test_handles_multiline_brew_version_output() {
   local temp_dir
   local output_file
@@ -830,10 +882,19 @@ EOF
   assert_contains "$output_file" 'ERROR: Required config value is not set: ACTIVITY_LOG_TIMEZONE' 'requires logging values to be defined by the config file itself'
 }
 
+test_active_shell_files_pass_bash_syntax_check() {
+  bash -n "$ROOT/libs/shared/shared/common.sh" || fail 'common.sh should pass bash -n'
+  bash -n "$ROOT/scripts/shared/brew/brew-install" || fail 'brew-install should pass bash -n'
+  bash -n "$ROOT/scripts/shared/shared/bootstrap" || fail 'bootstrap should pass bash -n'
+  bash -n "$ROOT/scripts/macos/downloads/macos-download" || fail 'macos-download should pass bash -n'
+  bash -n "$ROOT/scripts/macos/system/system-configure" || fail 'system-configure should pass bash -n'
+}
+
 test_selects_layered_brewfiles_and_installs_missing_only
 test_fails_when_no_matching_brewfiles_exist
 test_selects_linux_brewfiles
 test_help_output
+test_short_help_output
 test_rejects_positional_arguments
 test_rejects_invalid_brewfile_line
 test_rejects_brewfile_line_with_trailing_content
@@ -846,7 +907,9 @@ test_logs_new_installs_to_csv
 test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it
 test_fails_clearly_when_bootstrap_curl_is_missing
+test_requires_brew_installer_config_file
 test_handles_multiline_brew_version_output
 test_requires_logging_values_from_config_file
+test_active_shell_files_pass_bash_syntax_check
 
 printf 'PASS: tests/shared/brew/test-brew-install.sh\n'

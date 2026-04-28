@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 source "$SCRIPT_DIR/../../../libs/shared/shared/common.sh"
 
 show_usage() {
-  show_help "Usage: $(basename "$0") [--help]
+  show_help "Usage: $(basename "$0") [-h|--help]
 
 Run the active shared setup workflow.
 
