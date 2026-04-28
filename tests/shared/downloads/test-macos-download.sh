@@ -311,6 +311,7 @@ MACOS_DOWNLOAD_QUIT_TOKEN="q"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No official Apple macOS downloads are currently available."
 MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No selection received. Exiting."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Invalid selection."
+MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Unable to parse softwareupdate --list-full-installers output."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Downloaded"
 MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX="Requested installer"
 MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE="softwareupdate chooses the final installer location."
@@ -337,6 +338,7 @@ MACOS_DOWNLOAD_QUIT_TOKEN="x"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No Apple downloads found."
 MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No choice received. Leaving."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Pick a valid item."
+MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Could not parse softwareupdate installer listings."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Saved"
 MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX="Queued installer"
 MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE="softwareupdate decides the final installer location."
@@ -460,6 +462,7 @@ MACOS_DOWNLOAD_QUIT_TOKEN="q"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No official Apple macOS downloads are currently available."
 MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No selection received. Exiting."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Invalid selection."
+MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Unable to parse softwareupdate --list-full-installers output."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Downloaded"
 MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX="Requested installer"
 MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE="softwareupdate chooses the final installer location."
@@ -889,6 +892,7 @@ MACOS_DOWNLOAD_QUIT_TOKEN="q"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No official Apple macOS downloads are currently available."
 MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No selection received. Exiting."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Invalid selection."
+MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Unable to parse softwareupdate --list-full-installers output."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Downloaded"
 MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX="Requested installer"
 MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE="softwareupdate chooses the final installer location."
@@ -899,6 +903,47 @@ EOF
   fi
 
   assert_contains "$output_file" 'ERROR: Required config value is not set: MACOS_DOWNLOAD_DIR_RELATIVE' 'download workflow should require config values to come from the config file itself'
+}
+
+test_fails_clearly_when_installer_listing_is_unparseable() {
+  local temp_dir
+  local output_file
+  local catalog_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  catalog_file="$temp_dir/catalog.xml"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  write_catalog_sample "$catalog_file"
+  setup_common_stubs "$temp_dir"
+  write_download_config "$temp_dir"
+  mkdir -p "$temp_dir/state"
+
+  write_command_stub "$temp_dir/fake-bin/softwareupdate" '#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf "%s\n" "$*" >> "$STATE_DIR/softwareupdate.log"
+
+if [[ "$1" == "--list-full-installers" ]]; then
+  printf "%s\n" "* Titre : macOS Tahoe, Version : 26.4.1, Taille : 20485760KiB, Build : 25E253"
+  exit 0
+fi
+
+if [[ "$1" == "--fetch-full-installer" ]]; then
+  printf "%s\n" "$*" > "$STATE_DIR/fetched-installer.log"
+  exit 0
+fi
+
+exit 1'
+
+  if printf 'q\n' | TEST_CATALOG_FILE="$catalog_file" TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
+    fail 'macos-download should fail clearly when installer listing output cannot be parsed'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Unable to parse softwareupdate --list-full-installers output.' 'download workflow should fail clearly on unparseable installer listings'
+  assert_not_contains "$output_file" 'Traceback' 'installer listing parse failure should not print a Python traceback'
 }
 
 test_cleans_up_temp_files_when_setup_fails() {
@@ -963,6 +1008,7 @@ test_sorts_same_version_builds_newest_first
 test_documentation_headers
 test_requires_download_config_file
 test_requires_download_config_values_from_config_file
+test_fails_clearly_when_installer_listing_is_unparseable
 test_cleans_up_temp_files_when_setup_fails
 
 printf 'PASS: tests/shared/downloads/test-macos-download.sh\n'

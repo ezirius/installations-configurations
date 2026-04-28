@@ -96,6 +96,30 @@ normalize_defaults_bool_value() {
   esac
 }
 
+# Validate one repo config boolean before any system writes happen.
+validate_repo_bool_value() {
+  case "$2" in
+    true|false) ;;
+    *) fail "Invalid $1 value: $2" ;;
+  esac
+}
+
+# Validate one managed sleep value before any system writes happen.
+validate_non_negative_integer() {
+  case "$2" in
+    ''|*[!0-9]*) fail "Invalid $1 value: $2" ;;
+    *) ;;
+  esac
+}
+
+# Validate one managed pmset scope against the current workflow contract.
+validate_pmset_scope_value() {
+  case "$2" in
+    -a|-c) ;;
+    *) fail "Invalid $1 value: $2" ;;
+  esac
+}
+
 # Update one Dock boolean key only when the current value differs.
 set_dock_bool() {
   local key_name="$1"
@@ -131,7 +155,8 @@ mac_is_portable() {
   local battery_output
 
   battery_output="$(pmset -g batt 2>/dev/null || true)"
-  [[ "$battery_output" == *'InternalBattery'* ]]
+
+  [[ "$battery_output" == *'Battery Power'* || "$battery_output" == *'InternalBattery'* ]]
 }
 
 # Read the current sleep value from the requested pmset section.
@@ -181,6 +206,12 @@ validate_config() {
   [[ -n "${SYSTEM_PMSET_SLEEP_LOG_TOKEN:-}" ]] || fail 'SYSTEM_PMSET_SLEEP_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
+
+  validate_repo_bool_value 'DOCK_AUTO_HIDE' "$DOCK_AUTO_HIDE"
+  validate_repo_bool_value 'DOCK_REORDER_SPACES_BY_RECENT_USE' "$DOCK_REORDER_SPACES_BY_RECENT_USE"
+  validate_non_negative_integer 'AC_POWER_SYSTEM_SLEEP_MINUTES' "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+  validate_pmset_scope_value 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' "$SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE"
+  validate_pmset_scope_value 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' "$SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE"
 }
 
 main() {

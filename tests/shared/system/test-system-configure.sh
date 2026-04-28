@@ -149,7 +149,9 @@ case "$1" in
   -g)
     case "$2" in
       batt)
-        if [[ "${TEST_PMSET_PORTABLE:-0}" == "1" ]]; then
+        if [[ -n "${TEST_PMSET_BATT_OUTPUT:-}" ]]; then
+          printf "%s\n" "$TEST_PMSET_BATT_OUTPUT"
+        elif [[ "${TEST_PMSET_PORTABLE:-0}" == "1" ]]; then
           printf "%s\n" "Now drawing from Battery Power" " -InternalBattery-0 (id=1234567) 100%; charged; 0:00 remaining present: true"
         else
           printf "%s\n" "No battery"
@@ -352,6 +354,90 @@ EOF
   assert_contains "$output_file" 'ERROR: SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config' 'system-configure should require managed values to come from the config file itself'
 }
 
+test_rejects_invalid_sleep_minutes_before_applying_changes() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
+# Shared macOS system settings.
+DOCK_AUTO_HIDE=true
+DOCK_REORDER_SPACES_BY_RECENT_USE=false
+AC_POWER_SYSTEM_SLEEP_MINUTES=never
+SYSTEM_DOCK_DOMAIN="com.apple.dock"
+SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
+SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
+SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
+SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
+SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
+SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
+SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
+SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
+EOF
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should reject invalid sleep minutes before applying changes'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Invalid AC_POWER_SYSTEM_SLEEP_MINUTES value: never' 'system-configure should fail clearly on invalid sleep minutes'
+  assert_not_contains "$temp_dir/state/defaults.log" 'write com.apple.dock' 'invalid sleep config should fail before Dock writes'
+  assert_not_contains "$temp_dir/state/sudo.log" '-v' 'invalid sleep config should fail before sudo validation'
+  assert_not_contains "$temp_dir/state/pmset.log" ' sleep ' 'invalid sleep config should fail before pmset writes'
+}
+
+test_rejects_invalid_pmset_scope_before_applying_changes() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
+# Shared macOS system settings.
+DOCK_AUTO_HIDE=true
+DOCK_REORDER_SPACES_BY_RECENT_USE=false
+AC_POWER_SYSTEM_SLEEP_MINUTES=0
+SYSTEM_DOCK_DOMAIN="com.apple.dock"
+SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
+SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
+SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
+SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
+SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
+SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
+SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="portable"
+SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
+EOF
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should reject invalid pmset scope before applying changes'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Invalid SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE value: portable' 'system-configure should fail clearly on invalid pmset scope'
+  assert_not_contains "$temp_dir/state/defaults.log" 'write com.apple.dock' 'invalid pmset scope should fail before Dock writes'
+  assert_not_contains "$temp_dir/state/sudo.log" '-v' 'invalid pmset scope should fail before sudo validation'
+  assert_not_contains "$temp_dir/state/pmset.log" ' sleep ' 'invalid pmset scope should fail before pmset writes'
+}
+
 # Verify that the shared config is applied on a portable Mac when values differ.
 test_applies_shared_system_config_on_portable_mac() {
   local temp_dir
@@ -531,6 +617,35 @@ test_skips_dock_restart_when_dock_settings_are_already_correct() {
   fi
 }
 
+test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbattery_token() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_config "$temp_dir"
+
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=10 TEST_PMSET_BATT_OUTPUT='Now drawing from Battery Power' run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should use the portable pmset scope when battery power is reported'
+  fi
+
+  assert_contains "$temp_dir/state/sudo.log" '-v' 'validates sudo before portable pmset change'
+  assert_contains "$temp_dir/state/pmset.log" '-c sleep 0' 'uses portable pmset scope when battery power is reported without the InternalBattery token'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs the portable sleep change'
+}
+
 # Verify top-level documentation headers for the active system files.
 test_documentation_headers() {
   assert_starts_with_comment "$ROOT/configs/macos/system/system-settings-shared.conf" 'system config should start with a header comment'
@@ -544,11 +659,14 @@ test_rejects_positional_arguments
 test_requires_macos
 test_requires_system_config_file
 test_requires_system_config_values_from_config_file
+test_rejects_invalid_sleep_minutes_before_applying_changes
+test_rejects_invalid_pmset_scope_before_applying_changes
 test_applies_shared_system_config_on_portable_mac
 test_prefers_host_specific_override_and_skips_unchanged_sleep
 test_applies_non_portable_sleep_change_with_a_scope
 test_enforces_false_dock_value_when_key_is_unset
 test_skips_dock_restart_when_dock_settings_are_already_correct
+test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbattery_token
 test_documentation_headers
 
 printf 'PASS: tests/shared/system/test-system-configure.sh\n'

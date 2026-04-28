@@ -253,7 +253,7 @@ Behaviour:
 3. Uses Apple's public macOS IPSW catalog and `softwareupdate` as the active official sources.
 4. Groups entries into `ARM` and `X86` sections.
 5. Labels each entry as `IPSW` or `Installer`.
-6. Marks entries as `Download available` only when an official Apple download path exists.
+6. Shows only actionable parsed rows and marks each shown row as `Download available`.
 7. Lets the user select one downloadable entry by number.
 8. Sorts each section newest to oldest by version and build.
 9. Supports `--help` and takes no positional arguments.

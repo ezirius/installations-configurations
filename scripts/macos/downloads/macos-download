@@ -95,6 +95,7 @@ main() {
     'MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS' \
     'MACOS_DOWNLOAD_WARNING_NO_SELECTION' \
     'MACOS_DOWNLOAD_ERROR_INVALID_SELECTION' \
+    'MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE' \
     'MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX' \
     'MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX' \
     'MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE'
@@ -114,6 +115,7 @@ main() {
   require_config_value 'MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS'
   require_config_value 'MACOS_DOWNLOAD_WARNING_NO_SELECTION'
   require_config_value 'MACOS_DOWNLOAD_ERROR_INVALID_SELECTION'
+  require_config_value 'MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE'
   require_config_value 'MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX'
   require_config_value 'MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX'
   require_config_value 'MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE'
@@ -214,6 +216,7 @@ quit_token = os.environ['MACOS_DOWNLOAD_QUIT_TOKEN']
 warning_no_downloads = os.environ['MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS']
 warning_no_selection = os.environ['MACOS_DOWNLOAD_WARNING_NO_SELECTION']
 error_invalid_selection = os.environ['MACOS_DOWNLOAD_ERROR_INVALID_SELECTION']
+error_installer_listing_parse = os.environ['MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE']
 success_ipsw_prefix = os.environ['MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX']
 success_installer_prefix = os.environ['MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX']
 installer_destination_note = os.environ['MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE']
@@ -231,10 +234,16 @@ for version, build, url in extract_restore_entries(catalog):
     }
 
 installer_pattern = re.compile(r'^\* Title: .*?, Version: ([0-9]+(?:\.[0-9]+)*), Size: .*?, Build: ([^, ]+)(?:,.*)?$')
+installer_listing_had_candidates = False
+installer_listing_matched = False
 for line in installer_listing:
-    match = installer_pattern.match(line.strip())
+    stripped_line = line.strip()
+    if stripped_line.startswith('* '):
+        installer_listing_had_candidates = True
+    match = installer_pattern.match(stripped_line)
     if not match:
         continue
+    installer_listing_matched = True
     version, build = match.groups()
     for arch in installer_arch(version):
         grouped[arch][(version, build, installer_artifact_token)] = {
@@ -244,6 +253,10 @@ for line in installer_listing:
             'mode': 'softwareupdate',
             'value': version,
         }
+
+if installer_listing_had_candidates and not installer_listing_matched:
+    print(colorize('red', error_installer_listing_parse))
+    raise SystemExit(1)
 
 next_number = 1
 for arch in ('arm', 'x86'):
@@ -304,6 +317,7 @@ PY
   MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="$MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS" \
   MACOS_DOWNLOAD_WARNING_NO_SELECTION="$MACOS_DOWNLOAD_WARNING_NO_SELECTION" \
   MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="$MACOS_DOWNLOAD_ERROR_INVALID_SELECTION" \
+  MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="$MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE" \
   MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="$MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX" \
   MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX="$MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX" \
   MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE="$MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE" \
