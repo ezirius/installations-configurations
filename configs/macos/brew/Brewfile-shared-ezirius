@@ -18,6 +18,7 @@
 brew "nushell"
 brew "opencode"
 brew "podman"
+brew "podman-compose"
 
 # Apps
 cask "ghostty"
