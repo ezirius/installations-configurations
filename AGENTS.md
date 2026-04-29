@@ -5,10 +5,10 @@
 This repository manages installation and configuration files through a small,
 shared shell workflow.
 
-The current active focus is Homebrew installation through layered Brewfiles.
-Apple Mac restore images and full installer download handling from Apple's
-official sources is also active. macOS system configuration is also active
-under the same repo layout.
+The current focus is Homebrew installation through layered Brewfiles.
+Apple Mac restore images, full installer download handling from Apple's
+official sources, and macOS system configuration are also active under the
+same repo layout.
 
 ## Current Active Layout
 
@@ -18,13 +18,13 @@ under the same repo layout.
 - `tests/shared/` stores shared shell tests grouped by application.
 - `logs/` stores runtime activity logs and is gitignored.
 
-The current repo is intentionally small. Brew is the primary active application
+The repo is intentionally small. Brew is the primary active application
 workflow right now, with macOS download handling and macOS system configuration
 also active under the same repo layout.
 
 ### Active Files
 
-The current active implementation surface is:
+The active implementation surface is:
 
 - `configs/shared/shared/logging-shared.conf`
 - `configs/shared/brew/brew-install-shared.conf`
@@ -41,7 +41,7 @@ The current active implementation surface is:
 - `tests/shared/shared/test-bootstrap.sh`
 - `tests/shared/system/test-system-configure.sh`
 
-Keep rules, documentation, and behavior aligned with these files.
+Keep rules, documentation, and behaviour aligned with these files.
 
 External runtime values must live under `configs/`.
 This includes URLs, default paths, labels, tokens, headers, and similar
@@ -123,7 +123,7 @@ Allowed non-entry lines:
 - blank lines
 - comment lines beginning with `#`
 
-Behavior is strict:
+Behaviour is strict:
 
 - only double-quoted `brew` and `cask` entries are supported
 - single-quoted entries are unsupported
@@ -222,7 +222,7 @@ When the system workflow changes a managed setting, log it as:
 - Always keep the code as simple as possible.
 - Prefer the smallest practical change.
 - Always use superpowers and TDD for all tasks.
-- Use TDD for behavioral changes and refactors that can affect behavior.
+- Use TDD for behavioural changes and refactors that can affect behaviour.
 - Keep all external values in `configs/` for scripts and libraries.
 - Do not make scripts declarative just to move external values out of code.
 - This rule does not apply to test files; test fixtures may remain in tests.
@@ -246,36 +246,36 @@ When the system workflow changes a managed setting, log it as:
 
 ## Testing Rules
 
-- Update or add tests before changing behavior.
+- Update or add tests before changing behaviour.
 - Keep `tests/shared/brew/test-brew-install.sh` green.
 - Keep `tests/shared/downloads/test-macos-download.sh` green.
 - Treat the active shared shell test as a characterization test for the current
   Homebrew workflow.
-- Prefer fake repo tests with stubbed system commands for shared script behavior.
+- Prefer fake repo tests with stubbed system commands for shared script behaviour.
 - Cover known shell failure modes in tests, including child commands that
   consume stdin unexpectedly.
-- Cover Homebrew bootstrap behavior in tests, including logging Homebrew's own
+- Cover Homebrew bootstrap behaviour in tests, including logging Homebrew's own
   installation when the workflow performs it.
 - When moving helpers into `libs/shared/`, rerun the shared test immediately.
 - Run shell syntax checks on changed scripts and libraries.
 - When changing shared path conventions, update the fake repo test layout first
   so tests fail on the old contract before runtime code is changed.
-- Prefer behavior-based assertions over brittle absolute numbering in
+- Prefer behaviour-based assertions over brittle absolute numbering in
   interactive download tests.
 - When an interactive selection depends on rendered menu ordering, derive the
   selector from captured output instead of hard-coding menu numbers.
-- Cover strict parser behavior in tests, including unsupported trailing content
+- Cover strict parser behaviour in tests, including unsupported trailing content
   on otherwise valid-looking Brewfile lines.
 
 ## Documentation Rules
 
 - Be concise in user-facing responses.
-- Use tables where they improve clarity.
+- Present user-facing responses in a clear, easy-to-read format.
+- Use tables when they improve clarity; otherwise prefer short sections and lists.
 - Use British English in user-facing writing and documentation.
 - Use the metric system in user-facing writing and documentation.
 - When a domain normally uses imperial units as the standard reference, write measurements as metric first followed by imperial in parentheses.
-- Always keep all scripts, code, libraries, tests, and configs well documented.
-- Every active script, config, shared library, test file, and doc must be well documented.
+- Keep all scripts, code, libraries, tests, configs, and active docs well documented.
 - Add short header comments to active scripts and config files when the contract
   is not obvious from the filename alone.
 - Add short header comments to active shared libraries when their role is not
@@ -284,7 +284,7 @@ When the system workflow changes a managed setting, log it as:
   behaviours and the isolation approach when it is not obvious from the filename.
 - Treat missing or weak documentation in active files as a defect to fix, not as
   optional cleanup.
-- Keep active docs precise and aligned with the current file layout and behavior.
+- Keep active docs precise and aligned with the current file layout and behaviour.
 - Keep `README.md` aligned with the current active layout, not deleted legacy
   paths.
 
@@ -321,7 +321,7 @@ This order is intentional:
 - host-specific files add to the baseline
 - OS-specific files refine the shared baseline
 
-## Current `brew-install` Behavior
+## Current `brew-install` Behaviour
 
 The active installer:
 
@@ -337,14 +337,12 @@ The active installer:
 10. Fails clearly on unsupported Brewfile lines.
 11. Logs each successful install to the per-host CSV activity log.
 
-Additional current behavior:
+Additional current behaviour:
 
 - supports `--help`
 - takes no positional arguments
 - does not run `brew update`
 - does not upgrade already installed entries
-- logs Homebrew's own installation as `Installed,brew,<version>` when the
-  workflow installs Homebrew itself
 - uses `Installed` as the install activity action name
 - writes logs to `logs/<os>/shared/installations-and-configurations-<host>.csv`
 - creates the CSV header automatically when the log file does not exist
@@ -363,24 +361,23 @@ The current shared path conventions are:
 - application-shared libs: `libs/shared/<application>/...`
 - tests: `tests/shared/<application>/...`
 
-## Current Download Behavior
+## Current Download Behaviour
 
 `scripts/macos/downloads/macos-download` currently:
 
-1. uses Apple's public macOS IPSW catalog as the official direct source for
+1. uses Apple's public macOS IPSW catalog as the direct official source for
    Apple Silicon restore images
 2. uses `softwareupdate --list-full-installers` and
    `--fetch-full-installer` for official full installer listing and downloads
-3. uses Apple's public macOS IPSW catalog and `softwareupdate` as the active official sources
-4. groups macOS download options into `ARM` and `X86` sections
-5. labels each row as `IPSW` or `Installer`
-6. offers Apple Silicon IPSW downloads and ARM/X86 full installer downloads
-7. numbers only actionable downloads
-8. sorts each section newest to oldest by version and build
-9. stores IPSW downloads under `downloads/macos/downloads/` by default
-10. re-prompts on invalid interactive selection instead of exiting immediately
-11. supports `--help`
-12. takes no positional arguments
+3. groups macOS download options into `ARM` and `X86` sections
+4. labels each row as `IPSW` or `Installer`
+5. offers Apple Silicon IPSW downloads and ARM/X86 full installer downloads
+6. numbers only actionable downloads
+7. sorts each section newest to oldest by version and build
+8. stores IPSW downloads under `downloads/macos/downloads/` by default
+9. re-prompts on invalid interactive selection instead of exiting immediately
+10. supports `--help`
+11. takes no positional arguments
 
 Important current limitation:
 
@@ -389,7 +386,7 @@ Important current limitation:
 - Intel restore IPSW rows are not shown in the default output because they are
   not actionable from current official Apple sources
 
-## Current Bootstrap Behavior
+## Current Bootstrap Behaviour
 
 `scripts/shared/shared/bootstrap` currently:
 
@@ -402,7 +399,7 @@ Important current limitation:
 7. supports `--help`
 8. takes no positional arguments
 
-## Current System Behavior
+## Current System Behaviour
 
 `scripts/macos/system/system-configure` currently:
 
