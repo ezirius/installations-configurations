@@ -334,6 +334,10 @@ EOF
   assert_not_contains "$temp_dir/state/brew.log" 'wrong-user' 'ignores other username brewfile'
   assert_contains "$output_file" 'Brewfile-shared-ezirius' 'prints selected shared brewfile'
   assert_contains "$output_file" 'Brewfile-maldoria-ezirius' 'prints selected host brewfile'
+  assert_contains "$output_file" 'WARNING: Enable macOS Local Network access for these apps in System Settings > Privacy & Security > Local Network. This is needed, for example, to connect to the Multipass VM shell from the CLI:' 'prints Local Network warning heading after successful install runs'
+  assert_contains "$output_file" 'Enable Local Network access for: Ghostty' 'prints Ghostty Local Network warning'
+  assert_contains "$output_file" 'Enable Local Network access for: Multipass' 'prints Multipass Local Network warning'
+  assert_contains "$output_file" 'Enable Local Network access for: VSCodium' 'prints VSCodium Local Network warning'
 }
 
 test_fails_when_no_matching_brewfiles_exist() {
@@ -875,6 +879,42 @@ EOF
   assert_contains "$output_file" 'ERROR: Required config value is not set: HOMEBREW_INSTALL_URL' 'requires brew installer values to be defined by the config file itself'
 }
 
+test_requires_local_network_warning_values_from_config_file() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/shared/brew/brew-install-shared.conf" <<'EOF'
+# Shared Homebrew installer runtime defaults for all supported OS scopes and account names.
+#
+# This file owns external bootstrap values used by scripts/shared/brew/brew-install.
+# Missing required brew installer config is a hard failure.
+
+HOMEBREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if LOCAL_NETWORK_WARNING_TITLE='WARNING: wrong source' run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail when required Local Network warning values are missing from config even if exported in the environment'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Required config value is not set: LOCAL_NETWORK_WARNING_TITLE' 'requires Local Network warning values to be defined by the config file itself'
+}
+
 test_handles_multiline_brew_version_output() {
   local temp_dir
   local output_file
@@ -969,6 +1009,7 @@ test_bootstraps_homebrew_and_logs_it
 test_fails_clearly_when_bootstrap_curl_is_missing
 test_requires_brew_installer_config_file
 test_requires_brew_installer_values_from_config_file
+test_requires_local_network_warning_values_from_config_file
 test_handles_multiline_brew_version_output
 test_requires_logging_values_from_config_file
 test_active_shell_files_pass_bash_syntax_check

@@ -17,10 +17,12 @@
 # CLI tools
 brew "nushell"
 brew "opencode"
+brew "podman"
 
 # Apps
 cask "ghostty"
 cask "multipass"
+cask "podman-desktop"
 cask "rustdesk"
 cask "tailscale-app"
 cask "utm"

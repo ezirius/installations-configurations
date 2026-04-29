@@ -156,6 +156,18 @@ installed_entry_version() {
   printf '%s\n' "$version_name"
 }
 
+# Print the config-backed Local Network warning for apps that need manual macOS
+# approval after Homebrew setup completes.
+print_local_network_warning() {
+  local app_name
+
+  print_amber "$LOCAL_NETWORK_WARNING_TITLE"
+  while IFS= read -r app_name || [[ -n "$app_name" ]]; do
+    [[ -n "$app_name" ]] || continue
+    print_amber "Enable Local Network access for: $app_name"
+  done <<< "$LOCAL_NETWORK_WARNING_APPS"
+}
+
 # Read the current Homebrew version token, returning an empty value when it
 # cannot be resolved.
 homebrew_version() {
@@ -268,9 +280,14 @@ main() {
 
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
   load_shared_logging_config "$root_path"
-  clear_config_values 'HOMEBREW_INSTALL_URL'
+  clear_config_values \
+    'HOMEBREW_INSTALL_URL' \
+    'LOCAL_NETWORK_WARNING_TITLE' \
+    'LOCAL_NETWORK_WARNING_APPS'
   load_required_config "$root_path" 'configs/shared/brew/brew-install-shared.conf'
   require_config_value 'HOMEBREW_INSTALL_URL'
+  require_config_value 'LOCAL_NETWORK_WARNING_TITLE'
+  require_config_value 'LOCAL_NETWORK_WARNING_APPS'
   os_name="$(detect_os)"
   host_name="$(detect_host)"
   user_name="$(detect_username)"
@@ -294,6 +311,7 @@ main() {
     process_brewfile "$brewfile_path"
   done
 
+  print_local_network_warning
   print_green 'Done'
 }
 
