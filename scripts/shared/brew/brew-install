@@ -51,6 +51,9 @@ require_command() {
   command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
 }
 
+NUSHELL_COMPATIBILITY_WARNING=''
+PREPARED_NUSHELL_CONFIG_PATH=''
+
 shell_setup_block_begin() {
   printf '%s\n' '# >>> installations-and-configurations homebrew shellenv >>>'
 }
@@ -219,7 +222,7 @@ ensure_macos_nushell_compatibility_symlink() {
 
     command rm "$compatibility_dir"
     command ln -s "$canonical_dir" "$compatibility_dir"
-    print_warning "WARNING: Corrected Nushell compatibility symlink to point to $canonical_dir" >&2
+    NUSHELL_COMPATIBILITY_WARNING="WARNING: Corrected Nushell compatibility symlink to point to $canonical_dir"
     return 0
   fi
 
@@ -248,7 +251,7 @@ prepare_nushell_config_path() {
     command mkdir -p "$canonical_dir"
   fi
 
-  printf '%s/config.nu\n' "$canonical_dir"
+  PREPARED_NUSHELL_CONFIG_PATH="$canonical_dir/config.nu"
 }
 
 persist_shell_setup() {
@@ -269,7 +272,8 @@ persist_shell_setup() {
   zprofile_path="$HOME/.zprofile"
   bash_profile_path="$HOME/.bash_profile"
   bashrc_path="$HOME/.bashrc"
-  nushell_config_path="$(prepare_nushell_config_path "$os_name")"
+  prepare_nushell_config_path "$os_name"
+  nushell_config_path="$PREPARED_NUSHELL_CONFIG_PATH"
 
   upsert_managed_block \
     "$zprofile_path" \
@@ -291,6 +295,10 @@ persist_shell_setup() {
     "$(nushell_path_block_begin)" \
     "$(nushell_path_block_end)" \
     "$(nushell_path_block_content "$brew_bin_dir" "$brew_sbin_dir")"
+
+  if [[ -n "$NUSHELL_COMPATIBILITY_WARNING" ]]; then
+    print_warning "$NUSHELL_COMPATIBILITY_WARNING" >&2
+  fi
 
   print_green 'Configured shell startup for zsh, bash, and nushell'
 }

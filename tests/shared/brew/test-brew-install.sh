@@ -44,6 +44,16 @@ assert_not_contains() {
   fi
 }
 
+assert_path_missing() {
+  local path="$1"
+  local message="$2"
+
+  if [[ -e "$path" || -L "$path" ]]; then
+    printf 'Unexpected path exists: %s\n' "$path" >&2
+    fail "$message"
+  fi
+}
+
 assert_occurrences() {
   local file_path="$1"
   local expected_text="$2"
@@ -1422,6 +1432,7 @@ test_corrects_wrong_macos_nushell_symlink_target() {
   local compatibility_dir
   local wrong_target
   local canonical_config_path
+  local stray_warning_path
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
@@ -1429,6 +1440,7 @@ test_corrects_wrong_macos_nushell_symlink_target() {
   compatibility_dir="$(macos_nushell_compatibility_dir "$home_path")"
   wrong_target="$home_path/elsewhere/nushell"
   canonical_config_path="$(canonical_nushell_config_path "$home_path")"
+  stray_warning_path="$temp_dir/WARNING: Corrected Nushell compatibility symlink to point to $home_path/.config/nushell"
   mkdir -p "$temp_dir/state" "$wrong_target" "$(dirname "$compatibility_dir")"
   : > "$temp_dir/state/installed-formulae"
   : > "$temp_dir/state/installed-casks"
@@ -1453,6 +1465,8 @@ EOF
   [[ "$(readlink "$compatibility_dir")" == "$home_path/.config/nushell" ]] || fail 'should correct the macOS Nushell symlink target'
   assert_contains "$home_path/.config/nushell/env.nu" '# migrated file' 'migrates non-conflicting files from the wrong symlink target'
   assert_contains "$canonical_config_path" 'let brew_bin =' 'writes managed config after correcting the symlink'
+  assert_contains "$output_file" 'WARNING: Corrected Nushell compatibility symlink to point to ' 'reports the corrected macOS Nushell symlink'
+  assert_path_missing "$stray_warning_path" 'should not create a stray warning-named file when correcting the symlink'
 }
 
 test_migrates_macos_nushell_directory_to_canonical_config_dir() {
