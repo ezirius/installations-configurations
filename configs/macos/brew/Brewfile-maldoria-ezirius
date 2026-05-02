@@ -15,11 +15,19 @@
 # - unsupported directives are rejected by scripts/shared/brew/brew-install
 
 # CLI tools
-brew "bash"
-brew "mosh"
-brew "nushell"
+# brew "bash"
+# brew "mosh"
+# brew "nushell"
+brew "opencode"
+brew "podman"
+brew "podman-compose"
 
 # Apps
-cask "ghostty"
-cask "rustdesk"
-cask "tailscale-app"
+cask "brave-browser"
+# cask "ghostty"
+cask "multipass"
+cask "podman-desktop"
+# cask "rustdesk"
+# cask "tailscale-app"
+cask "utm"
+cask "vscodium"

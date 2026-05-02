@@ -44,6 +44,21 @@ assert_not_contains() {
   fi
 }
 
+assert_occurrences() {
+  local file_path="$1"
+  local expected_text="$2"
+  local expected_count="$3"
+  local message="$4"
+  local actual_count
+
+  actual_count="$(grep -F -c -- "$expected_text" "$file_path" || true)"
+  if [[ "$actual_count" != "$expected_count" ]]; then
+    printf 'Expected %s occurrences of: %s\n' "$expected_count" "$expected_text" >&2
+    printf 'Actual occurrences: %s\n' "$actual_count" >&2
+    fail "$message"
+  fi
+}
+
 assert_starts_with_comment() {
   local file_path="$1"
   local message="$2"
@@ -267,11 +282,61 @@ run_in_fake_repo() {
   local temp_dir="$1"
   local output_file="$2"
 
+  command mkdir -p "$temp_dir/home"
+
   TEST_STATE_DIR="$temp_dir/state" \
   TEST_FAKE_BIN="$temp_dir/fake-bin" \
+  HOME="$temp_dir/home" \
   HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV="${HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV:-0}" \
   PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$temp_dir/scripts/shared/brew/brew-install" > "$output_file" 2>&1
+}
+
+shell_block_marker() {
+  printf '%s\n' '# >>> installations-and-configurations homebrew shellenv >>>'
+}
+
+nushell_block_marker() {
+  printf '%s\n' '# >>> installations-and-configurations homebrew path >>>'
+}
+
+canonical_nushell_config_path() {
+  local home_path="$1"
+  printf '%s/.config/nushell/config.nu\n' "$home_path"
+}
+
+macos_nushell_compatibility_dir() {
+  local home_path="$1"
+  printf '%s/Library/Application Support/nushell\n' "$home_path"
+}
+
+linux_nushell_config_path() {
+  local home_path="$1"
+  printf '%s/.config/nushell/config.nu\n' "$home_path"
+}
+
+assert_shell_setup_files() {
+  local home_path="$1"
+  local os_name="$2"
+  local nushell_config_path="$3"
+  local compatibility_dir
+
+  assert_contains "$home_path/.zprofile" 'brew shellenv zsh' 'writes zsh shellenv block'
+  assert_contains "$home_path/.bash_profile" 'brew shellenv bash' 'writes bash profile shellenv block'
+  assert_contains "$home_path/.bashrc" 'brew shellenv bash' 'writes bashrc shellenv block'
+  assert_occurrences "$home_path/.zprofile" "$(shell_block_marker)" 1 'writes one zsh managed block'
+  assert_occurrences "$home_path/.bash_profile" "$(shell_block_marker)" 1 'writes one bash profile managed block'
+  assert_occurrences "$home_path/.bashrc" "$(shell_block_marker)" 1 'writes one bashrc managed block'
+  assert_contains "$nushell_config_path" 'let brew_bin =' 'writes Nushell brew bin path'
+  assert_contains "$nushell_config_path" 'let brew_sbin =' 'writes Nushell brew sbin path'
+  assert_contains "$nushell_config_path" 'not-in $env.PATH' 'guards Nushell path prepends'
+  assert_occurrences "$nushell_config_path" "$(nushell_block_marker)" 1 'writes one Nushell managed block'
+
+  if [[ "$os_name" == 'macos' ]]; then
+    compatibility_dir="$(macos_nushell_compatibility_dir "$home_path")"
+    [[ -L "$compatibility_dir" ]] || fail 'macOS should create a Nushell compatibility symlink'
+    [[ "$(readlink "$compatibility_dir")" == "$home_path/.config/nushell" ]] || fail 'macOS compatibility symlink should point to the canonical Nushell dir'
+  fi
 }
 
 test_selects_layered_brewfiles_and_installs_missing_only() {
@@ -622,7 +687,7 @@ test_active_files_are_documented() {
   assert_contains "$ROOT/README.md" '- `<username>` is `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`' 'README should document username normalisation'
   assert_contains "$ROOT/README.md" '- leading and trailing `-` characters are trimmed' 'README should document trimming dash runs'
   assert_contains "$ROOT/README.md" '- repeated `-` characters are collapsed' 'README should document collapsing repeated dashes'
-  assert_contains "$ROOT/AGENTS.md" 'Every active script, config, shared library, test file, and doc must be well documented.' 'AGENTS should state the documentation requirement'
+  assert_contains "$ROOT/AGENTS.md" 'Keep all scripts, code, libraries, tests, configs, and active docs well documented.' 'AGENTS should state the documentation requirement'
 }
 
 test_gitignore_repo_hygiene_rules() {
@@ -982,6 +1047,486 @@ EOF
   assert_contains "$output_file" 'ERROR: Required config value is not set: ACTIVITY_LOG_TIMEZONE' 'requires logging values to be defined by the config file itself'
 }
 
+test_persists_shell_setup_when_brew_exists() {
+  local temp_dir
+  local output_file
+  local home_path
+  local nushell_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  nushell_config_path="$(canonical_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should persist shell setup when brew already exists'
+  fi
+
+  assert_shell_setup_files "$home_path" 'macos' "$nushell_config_path"
+  assert_contains "$output_file" 'Configured shell startup for zsh, bash, and nushell' 'reports shell setup summary'
+}
+
+test_persists_shell_setup_after_homebrew_bootstrap() {
+  local temp_dir
+  local output_file
+  local home_path
+  local nushell_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  nushell_config_path="$(canonical_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! TEST_BOOTSTRAP_BREW=1 HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should persist shell setup after bootstrapping Homebrew'
+  fi
+
+  assert_shell_setup_files "$home_path" 'macos' "$nushell_config_path"
+}
+
+test_shell_setup_is_idempotent_on_rerun() {
+  local temp_dir
+  local output_file
+  local home_path
+  local nushell_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  nushell_config_path="$(canonical_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'first run should succeed when testing shell setup idempotence'
+  fi
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'second run should succeed when testing shell setup idempotence'
+  fi
+
+  assert_occurrences "$home_path/.zprofile" "$(shell_block_marker)" 1 'zprofile managed block should not duplicate on rerun'
+  assert_occurrences "$home_path/.bash_profile" "$(shell_block_marker)" 1 'bash profile managed block should not duplicate on rerun'
+  assert_occurrences "$home_path/.bashrc" "$(shell_block_marker)" 1 'bashrc managed block should not duplicate on rerun'
+  assert_occurrences "$nushell_config_path" "$(nushell_block_marker)" 1 'Nushell managed block should not duplicate on rerun'
+}
+
+test_preserves_existing_shell_config_content() {
+  local temp_dir
+  local output_file
+  local home_path
+  local nushell_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  nushell_config_path="$(canonical_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state" "$(dirname "$nushell_config_path")"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  mkdir -p "$home_path"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$home_path/.zprofile" <<'EOF'
+# existing zprofile line
+alias ll='ls -l'
+EOF
+
+  cat > "$home_path/.bash_profile" <<'EOF'
+# existing bash profile line
+export EDITOR=vi
+EOF
+
+  cat > "$home_path/.bashrc" <<'EOF'
+# existing bashrc line
+export HISTSIZE=1000
+EOF
+
+  cat > "$nushell_config_path" <<'EOF'
+# existing config line
+$env.config.show_banner = false
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should preserve existing shell config content'
+  fi
+
+  assert_contains "$home_path/.zprofile" "alias ll='ls -l'" 'preserves existing zprofile content'
+  assert_contains "$home_path/.bash_profile" 'export EDITOR=vi' 'preserves existing bash profile content'
+  assert_contains "$home_path/.bashrc" 'export HISTSIZE=1000' 'preserves existing bashrc content'
+  assert_contains "$nushell_config_path" '$env.config.show_banner = false' 'preserves existing Nushell config content'
+}
+
+test_uses_xdg_config_home_for_nushell_when_set() {
+  local temp_dir
+  local output_file
+  local xdg_config_home
+  local xdg_nushell_config
+  local default_nushell_config
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  xdg_config_home="$temp_dir/xdg-config"
+  xdg_nushell_config="$xdg_config_home/nushell/config.nu"
+  default_nushell_config="$(canonical_nushell_config_path "$temp_dir/home")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! XDG_CONFIG_HOME="$xdg_config_home" run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should use XDG config home for Nushell when set'
+  fi
+
+  assert_contains "$xdg_nushell_config" 'let brew_bin =' 'writes Nushell config to XDG config home'
+  [[ ! -e "$default_nushell_config" ]] || fail 'should not create default macOS Nushell config when XDG_CONFIG_HOME is set'
+  [[ ! -e "$(macos_nushell_compatibility_dir "$temp_dir/home")" ]] || fail 'should not manage macOS Nushell compatibility symlink when XDG_CONFIG_HOME is set'
+}
+
+test_uses_linux_default_nushell_path() {
+  local temp_dir
+  local output_file
+  local home_path
+  local nushell_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  nushell_config_path="$(linux_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state" "$temp_dir/configs/linux/brew"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/linux/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! TEST_UNAME=Linux run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should use the Linux default Nushell config path'
+  fi
+
+  assert_contains "$nushell_config_path" 'let brew_bin =' 'writes Nushell config to Linux default path'
+}
+
+test_accepts_bash_profile_sourcing_bashrc() {
+  local temp_dir
+  local output_file
+  local home_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  mkdir -p "$temp_dir/state" "$home_path"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$home_path/.bash_profile" <<'EOF'
+if [[ -f ~/.bashrc ]]; then
+  . ~/.bashrc
+fi
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should tolerate bash profile sourcing bashrc'
+  fi
+
+  assert_contains "$home_path/.bash_profile" '. ~/.bashrc' 'preserves bash profile sourcing bashrc'
+  assert_contains "$home_path/.bash_profile" 'brew shellenv bash' 'adds shellenv to bash profile'
+  assert_contains "$home_path/.bashrc" 'brew shellenv bash' 'adds shellenv to bashrc'
+}
+
+test_nushell_block_guards_against_duplicate_paths() {
+  local temp_dir
+  local output_file
+  local nushell_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  nushell_config_path="$(canonical_nushell_config_path "$temp_dir/home")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should write a guarded Nushell PATH block'
+  fi
+
+  assert_contains "$nushell_config_path" 'if ($env.PATH | describe | str starts-with "list<") {' 'guards Nushell block against unexpected PATH type'
+  assert_occurrences "$nushell_config_path" 'not-in $env.PATH' 2 'checks both Nushell Homebrew paths before prepend'
+}
+
+test_ignores_inherited_mkdir_shell_function() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"; unset -f mkdir 2>/dev/null || true' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  mkdir() {
+    printf 'wrapped mkdir should not run\n' >&2
+    return 99
+  }
+
+  export -f mkdir
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should ignore inherited mkdir shell functions'
+  fi
+
+  unset -f mkdir
+}
+
+test_creates_macos_nushell_compatibility_symlink() {
+  local temp_dir
+  local output_file
+  local home_path
+  local canonical_config_path
+  local compatibility_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  canonical_config_path="$(canonical_nushell_config_path "$home_path")"
+  compatibility_dir="$(macos_nushell_compatibility_dir "$home_path")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should create the macOS Nushell compatibility symlink'
+  fi
+
+  [[ -L "$compatibility_dir" ]] || fail 'should create the macOS Nushell compatibility symlink'
+  [[ "$(readlink "$compatibility_dir")" == "$home_path/.config/nushell" ]] || fail 'compatibility symlink should point to the canonical Nushell dir'
+  assert_contains "$canonical_config_path" 'let brew_bin =' 'writes canonical Nushell config when creating the compatibility symlink'
+}
+
+test_corrects_wrong_macos_nushell_symlink_target() {
+  local temp_dir
+  local output_file
+  local home_path
+  local compatibility_dir
+  local wrong_target
+  local canonical_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  compatibility_dir="$(macos_nushell_compatibility_dir "$home_path")"
+  wrong_target="$home_path/elsewhere/nushell"
+  canonical_config_path="$(canonical_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state" "$wrong_target" "$(dirname "$compatibility_dir")"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  ln -s "$wrong_target" "$compatibility_dir"
+  printf '# migrated file\n' > "$wrong_target/env.nu"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should correct a wrong macOS Nushell symlink target'
+  fi
+
+  [[ "$(readlink "$compatibility_dir")" == "$home_path/.config/nushell" ]] || fail 'should correct the macOS Nushell symlink target'
+  assert_contains "$home_path/.config/nushell/env.nu" '# migrated file' 'migrates non-conflicting files from the wrong symlink target'
+  assert_contains "$canonical_config_path" 'let brew_bin =' 'writes managed config after correcting the symlink'
+}
+
+test_migrates_macos_nushell_directory_to_canonical_config_dir() {
+  local temp_dir
+  local output_file
+  local home_path
+  local compatibility_dir
+  local canonical_config_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  compatibility_dir="$(macos_nushell_compatibility_dir "$home_path")"
+  canonical_config_path="$(canonical_nushell_config_path "$home_path")"
+  mkdir -p "$temp_dir/state" "$compatibility_dir"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  printf '# migrated from compatibility dir\n' > "$compatibility_dir/env.nu"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should migrate the macOS Nushell compatibility directory into the canonical dir'
+  fi
+
+  [[ -L "$compatibility_dir" ]] || fail 'should replace the compatibility directory with a symlink'
+  assert_contains "$home_path/.config/nushell/env.nu" '# migrated from compatibility dir' 'migrates non-conflicting files from the compatibility directory'
+  assert_contains "$canonical_config_path" 'let brew_bin =' 'writes managed config after directory migration'
+}
+
+test_fails_on_conflicting_macos_nushell_configs() {
+  local temp_dir
+  local output_file
+  local home_path
+  local compatibility_dir
+  local canonical_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  home_path="$temp_dir/home"
+  compatibility_dir="$(macos_nushell_compatibility_dir "$home_path")"
+  canonical_dir="$home_path/.config/nushell"
+  mkdir -p "$temp_dir/state" "$compatibility_dir" "$canonical_dir"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  printf '# canonical config\n' > "$canonical_dir/config.nu"
+  printf '# conflicting compatibility config\n' > "$compatibility_dir/config.nu"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail when macOS Nushell config locations conflict'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Conflicting Nushell config exists in both canonical and macOS compatibility locations. Resolve manually.' 'fails clearly on conflicting macOS Nushell config locations'
+}
+
 test_active_shell_files_pass_bash_syntax_check() {
   bash -n "$ROOT/libs/shared/shared/common.sh" || fail 'common.sh should pass bash -n'
   bash -n "$ROOT/scripts/shared/brew/brew-install" || fail 'brew-install should pass bash -n'
@@ -1012,6 +1557,19 @@ test_requires_brew_installer_values_from_config_file
 test_requires_local_network_warning_values_from_config_file
 test_handles_multiline_brew_version_output
 test_requires_logging_values_from_config_file
+test_persists_shell_setup_when_brew_exists
+test_persists_shell_setup_after_homebrew_bootstrap
+test_shell_setup_is_idempotent_on_rerun
+test_preserves_existing_shell_config_content
+test_uses_xdg_config_home_for_nushell_when_set
+test_uses_linux_default_nushell_path
+test_accepts_bash_profile_sourcing_bashrc
+test_nushell_block_guards_against_duplicate_paths
+test_ignores_inherited_mkdir_shell_function
+test_creates_macos_nushell_compatibility_symlink
+test_corrects_wrong_macos_nushell_symlink_target
+test_migrates_macos_nushell_directory_to_canonical_config_dir
+test_fails_on_conflicting_macos_nushell_configs
 test_active_shell_files_pass_bash_syntax_check
 
 printf 'PASS: tests/shared/brew/test-brew-install.sh\n'

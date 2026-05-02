@@ -309,7 +309,7 @@ MACOS_DOWNLOAD_STATUS_AVAILABLE="Download available"
 MACOS_DOWNLOAD_SELECTION_PROMPT="Select a downloadable item, or q to quit: "
 MACOS_DOWNLOAD_QUIT_TOKEN="q"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No official Apple macOS downloads are currently available."
-MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No selection received. Exiting."
+MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: Input ended before a selection was received. Exiting."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Invalid selection."
 MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Unable to parse softwareupdate --list-full-installers output."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Downloaded"
@@ -460,7 +460,7 @@ MACOS_DOWNLOAD_STATUS_AVAILABLE="Download available"
 MACOS_DOWNLOAD_SELECTION_PROMPT="Select a downloadable item, or q to quit: "
 MACOS_DOWNLOAD_QUIT_TOKEN="q"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No official Apple macOS downloads are currently available."
-MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No selection received. Exiting."
+MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: Input ended before a selection was received. Exiting."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Invalid selection."
 MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Unable to parse softwareupdate --list-full-installers output."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Downloaded"
@@ -807,7 +807,7 @@ test_exits_cleanly_on_eof() {
   fi
 
   assert_not_contains "$output_file" 'Traceback' 'EOF should not print a Python traceback'
-  assert_contains "$output_file" 'WARNING: No selection received. Exiting.' 'prints configured EOF warning'
+  assert_contains "$output_file" 'WARNING: Input ended before a selection was received. Exiting.' 'prints configured EOF warning'
 }
 
 test_sorts_same_version_builds_newest_first() {
@@ -890,7 +890,7 @@ MACOS_DOWNLOAD_STATUS_AVAILABLE="Download available"
 MACOS_DOWNLOAD_SELECTION_PROMPT="Select a downloadable item, or q to quit: "
 MACOS_DOWNLOAD_QUIT_TOKEN="q"
 MACOS_DOWNLOAD_WARNING_NO_DOWNLOADS="WARNING: No official Apple macOS downloads are currently available."
-MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: No selection received. Exiting."
+MACOS_DOWNLOAD_WARNING_NO_SELECTION="WARNING: Input ended before a selection was received. Exiting."
 MACOS_DOWNLOAD_ERROR_INVALID_SELECTION="ERROR: Invalid selection."
 MACOS_DOWNLOAD_ERROR_INSTALLER_LISTING_PARSE="ERROR: Unable to parse softwareupdate --list-full-installers output."
 MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX="Downloaded"

@@ -178,7 +178,8 @@ It is not the right place for:
 Use:
 
 - green for success and active selections
-- amber for warnings and skips
+- amber/orange for warnings
+- plain text for skips
 - red for errors
 
 Keep non-interactive output plain text.
@@ -186,7 +187,8 @@ Keep non-interactive output plain text.
 For shared entrypoint CLI output, keep the contract simple:
 
 - green: success
-- amber: warnings and skips
+- amber/orange: warnings
+- plain text: skips
 - red: errors
 
 ## Activity Logging Rules

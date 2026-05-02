@@ -151,7 +151,7 @@ def version_key(version: str):
 def colorize(kind: str, message: str):
     if not sys.stdout.isatty():
         return message
-    colors = {'green': '\033[32m', 'amber': '\033[33m', 'red': '\033[31m'}
+    colors = {'green': '\033[32m', 'amber': '\033[38;2;255;191;0m', 'red': '\033[31m'}
     return f"{colors[kind]}{message}\033[0m"
 
 

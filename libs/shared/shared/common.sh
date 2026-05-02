@@ -17,7 +17,7 @@
 
 if [[ -t 1 ]]; then
   COLOR_GREEN='\033[32m'
-  COLOR_AMBER='\033[33m'
+  COLOR_AMBER='\033[38;2;255;191;0m'
   COLOR_RED='\033[31m'
   COLOR_RESET='\033[0m'
 else
@@ -33,6 +33,14 @@ print_green() {
 
 print_amber() {
   printf '%b%s%b\n' "$COLOR_AMBER" "$1" "$COLOR_RESET"
+}
+
+print_warning() {
+  print_amber "$1"
+}
+
+print_skip() {
+  printf '%s\n' "$1"
 }
 
 print_red() {
@@ -124,7 +132,7 @@ repo_root_from_script_path() {
   local script_path="$1"
   local script_dir
 
-  script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+  script_dir="$(cd "$(command dirname "$script_path")" && pwd)"
   cd "$script_dir/../../.." && pwd
 }
 
@@ -212,8 +220,8 @@ ensure_activity_log_file() {
   local log_file_path="$1"
   local log_dir
 
-  log_dir="$(dirname "$log_file_path")"
-  mkdir -p "$log_dir"
+  log_dir="$(command dirname "$log_file_path")"
+  command mkdir -p "$log_dir"
 
   if [[ ! -f "$log_file_path" ]]; then
     printf '%s\n' "$ACTIVITY_LOG_CSV_HEADER" > "$log_file_path"
@@ -236,4 +244,55 @@ append_activity_log_row() {
     "$action_name" \
     "$application_name" \
     "$version_name" >> "$log_file_path"
+}
+
+# Replace or append one managed text block in a target file while preserving all
+# unrelated user content.
+upsert_managed_block() {
+  local target_file_path="$1"
+  local block_begin="$2"
+  local block_end="$3"
+  local block_content="$4"
+  local target_dir
+  local temp_file
+  local line
+  local inside_block
+  local block_found
+
+  target_dir="$(command dirname "$target_file_path")"
+  command mkdir -p "$target_dir"
+  [[ -f "$target_file_path" ]] || : > "$target_file_path"
+
+  temp_file="$(mktemp)"
+  inside_block='0'
+  block_found='0'
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == "$block_begin" ]]; then
+      if [[ "$block_found" == '0' ]]; then
+        printf '%s\n%s\n%s\n' "$block_begin" "$block_content" "$block_end" >> "$temp_file"
+        block_found='1'
+      fi
+      inside_block='1'
+      continue
+    fi
+
+    if [[ "$inside_block" == '1' ]]; then
+      if [[ "$line" == "$block_end" ]]; then
+        inside_block='0'
+      fi
+      continue
+    fi
+
+    printf '%s\n' "$line" >> "$temp_file"
+  done < "$target_file_path"
+
+  if [[ "$block_found" == '0' ]]; then
+    if [[ -s "$temp_file" ]]; then
+      printf '\n' >> "$temp_file"
+    fi
+    printf '%s\n%s\n%s\n' "$block_begin" "$block_content" "$block_end" >> "$temp_file"
+  fi
+
+  command mv "$temp_file" "$target_file_path"
 }

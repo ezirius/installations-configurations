@@ -140,19 +140,32 @@ Behaviour:
 
 1. Detect repo root from the script location.
 2. Detect OS, host, and username.
-3. Load Homebrew into `PATH` if it is installed in a standard prefix.
+3. Load Homebrew into `PATH` for the running script if it is installed in a standard prefix.
 4. Install Homebrew itself if it is still missing, then log `Installed,brew,<version>`.
-5. Resolve matching Brewfiles.
-6. Parse each matching Brewfile in order.
-7. Install only missing formulae and casks.
-8. Skip already installed entries.
-9. Reject unsupported Brewfile directives with a clear error.
-10. Append one CSV row for each successful install to the per-host activity log.
-11. Do not run `brew update` or upgrade already installed entries.
+5. Persist Homebrew command availability for future shells:
+   - `~/.zprofile` for `zsh`
+   - `~/.bash_profile` and `~/.bashrc` for Bash
+   - Nushell `config.nu` with `PATH`-only Homebrew entries stored in the canonical `.config` location
+6. Resolve matching Brewfiles.
+7. Parse each matching Brewfile in order.
+8. Install only missing formulae and casks.
+9. Skip already installed entries.
+10. Reject unsupported Brewfile directives with a clear error.
+11. Append one CSV row for each successful install to the per-host activity log.
+12. Do not run `brew update` or upgrade already installed entries.
 
 The script does not implement architecture selection. Homebrew handles ARM/x86 selection.
 Homebrew metadata updates and package upgrades are currently outside this
 workflow's scope.
+
+Nushell config resolution order is:
+
+1. `$XDG_CONFIG_HOME/nushell/config.nu` when `XDG_CONFIG_HOME` is set
+2. `~/.config/nushell/config.nu` when `XDG_CONFIG_HOME` is not set
+
+On macOS when `XDG_CONFIG_HOME` is not set, the workflow also keeps
+`~/Library/Application Support/nushell` as a compatibility symlink to the
+canonical per-user `.config/nushell` directory.
 
 ## `libs/shared/shared/common.sh`
 
@@ -179,7 +192,8 @@ being moved into `libs/shared/shared/common.sh` too early.
 `scripts/shared/brew/brew-install` uses color when writing to a terminal:
 
 - green: success and active selections
-- amber: warnings and skips
+- amber/orange: warnings
+- plain text: skips
 - red: errors
 
 Non-interactive output remains plain text.
@@ -187,7 +201,8 @@ Non-interactive output remains plain text.
 Shared entrypoint scripts use the same CLI color contract:
 
 - green: success
-- amber: warnings and skips
+- amber/orange: warnings
+- plain text: skips
 - red: errors
 
 ## Activity Logs

@@ -51,8 +51,252 @@ require_command() {
   command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
 }
 
+shell_setup_block_begin() {
+  printf '%s\n' '# >>> installations-and-configurations homebrew shellenv >>>'
+}
+
+shell_setup_block_end() {
+  printf '%s\n' '# <<< installations-and-configurations homebrew shellenv <<<'
+}
+
+nushell_path_block_begin() {
+  printf '%s\n' '# >>> installations-and-configurations homebrew path >>>'
+}
+
+nushell_path_block_end() {
+  printf '%s\n' '# <<< installations-and-configurations homebrew path <<<'
+}
+
+shellenv_block_content() {
+  local brew_path="$1"
+  local shell_name="$2"
+
+  printf 'eval "$(%s shellenv %s)"\n' "$brew_path" "$shell_name"
+}
+
+nushell_path_block_content() {
+  local brew_bin_dir="$1"
+  local brew_sbin_dir="$2"
+
+  printf '%s\n' \
+    "let brew_bin = \"$brew_bin_dir\"" \
+    "let brew_sbin = \"$brew_sbin_dir\"" \
+    '' \
+    'if ($env.PATH | describe | str starts-with "list<") {' \
+    '  if $brew_sbin not-in $env.PATH {' \
+    '    $env.PATH = ($env.PATH | prepend $brew_sbin)' \
+    '  }' \
+    '  if $brew_bin not-in $env.PATH {' \
+    '    $env.PATH = ($env.PATH | prepend $brew_bin)' \
+    '  }' \
+    '}'
+}
+
+nushell_conflict_message() {
+  printf '%s\n' 'Conflicting Nushell config exists in both canonical and macOS compatibility locations. Resolve manually.'
+}
+
+resolve_canonical_nushell_dir() {
+  if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+    printf '%s/nushell\n' "$XDG_CONFIG_HOME"
+  else
+    printf '%s/.config/nushell\n' "$HOME"
+  fi
+}
+
+resolve_canonical_nushell_config_path() {
+  printf '%s/config.nu\n' "$(resolve_canonical_nushell_dir)"
+}
+
+macos_nushell_compatibility_dir() {
+  printf '%s/Library/Application Support/nushell\n' "$HOME"
+}
+
+resolve_symlink_target_path() {
+  local link_path="$1"
+  local raw_target
+  local link_dir
+
+  raw_target="$(command readlink "$link_path")"
+  if [[ "$raw_target" == /* ]]; then
+    printf '%s\n' "$raw_target"
+  else
+    link_dir="$(command dirname "$link_path")"
+    printf '%s/%s\n' "$link_dir" "$raw_target"
+  fi
+}
+
+nushell_dirs_conflict() {
+  local source_dir="$1"
+  local destination_dir="$2"
+  local source_path
+  local relative_path
+  local destination_path
+
+  [[ -d "$source_dir" ]] || return 1
+
+  while IFS= read -r source_path; do
+    relative_path="${source_path#"$source_dir"/}"
+    destination_path="$destination_dir/$relative_path"
+
+    if [[ -d "$source_path" ]]; then
+      if [[ -e "$destination_path" && ! -d "$destination_path" ]]; then
+        return 0
+      fi
+      continue
+    fi
+
+    if [[ -e "$destination_path" || -L "$destination_path" ]]; then
+      if [[ -d "$destination_path" ]]; then
+        return 0
+      fi
+
+      if ! cmp -s "$source_path" "$destination_path" 2>/dev/null; then
+        return 0
+      fi
+    fi
+  done < <(command find "$source_dir" -mindepth 1)
+
+  return 1
+}
+
+migrate_nushell_dir_contents() {
+  local source_dir="$1"
+  local destination_dir="$2"
+  local source_path
+  local relative_path
+  local destination_path
+
+  [[ -d "$source_dir" ]] || return 0
+  command mkdir -p "$destination_dir"
+
+  if nushell_dirs_conflict "$source_dir" "$destination_dir"; then
+    fail "$(nushell_conflict_message)"
+  fi
+
+  while IFS= read -r source_path; do
+    relative_path="${source_path#"$source_dir"/}"
+    destination_path="$destination_dir/$relative_path"
+
+    if [[ -d "$source_path" ]]; then
+      command mkdir -p "$destination_path"
+      continue
+    fi
+
+    command mkdir -p "$(command dirname "$destination_path")"
+    if [[ -e "$destination_path" || -L "$destination_path" ]]; then
+      command rm -f "$source_path"
+    else
+      command mv "$source_path" "$destination_path"
+    fi
+  done < <(command find "$source_dir" -mindepth 1 -depth)
+
+  command rm -rf "$source_dir"
+}
+
+ensure_macos_nushell_compatibility_symlink() {
+  local canonical_dir="$1"
+  local compatibility_dir
+  local compatibility_parent
+  local compatibility_target
+
+  compatibility_dir="$(macos_nushell_compatibility_dir)"
+  compatibility_parent="$(command dirname "$compatibility_dir")"
+  command mkdir -p "$compatibility_parent"
+  command mkdir -p "$canonical_dir"
+
+  if [[ -L "$compatibility_dir" ]]; then
+    compatibility_target="$(resolve_symlink_target_path "$compatibility_dir")"
+    if [[ "$compatibility_target" == "$canonical_dir" ]]; then
+      return 0
+    fi
+
+    if [[ -d "$compatibility_target" ]]; then
+      migrate_nushell_dir_contents "$compatibility_target" "$canonical_dir"
+    elif [[ -e "$compatibility_target" ]]; then
+      fail "$(nushell_conflict_message)"
+    fi
+
+    command rm "$compatibility_dir"
+    command ln -s "$canonical_dir" "$compatibility_dir"
+    print_warning "WARNING: Corrected Nushell compatibility symlink to point to $canonical_dir" >&2
+    return 0
+  fi
+
+  if [[ -d "$compatibility_dir" ]]; then
+    migrate_nushell_dir_contents "$compatibility_dir" "$canonical_dir"
+    command ln -s "$canonical_dir" "$compatibility_dir"
+    return 0
+  fi
+
+  if [[ -e "$compatibility_dir" ]]; then
+    fail "$(nushell_conflict_message)"
+  fi
+
+  command ln -s "$canonical_dir" "$compatibility_dir"
+}
+
+prepare_nushell_config_path() {
+  local os_name="$1"
+  local canonical_dir
+
+  canonical_dir="$(resolve_canonical_nushell_dir)"
+
+  if [[ "$os_name" == 'macos' && -z "${XDG_CONFIG_HOME:-}" ]]; then
+    ensure_macos_nushell_compatibility_symlink "$canonical_dir"
+  else
+    command mkdir -p "$canonical_dir"
+  fi
+
+  printf '%s/config.nu\n' "$canonical_dir"
+}
+
+persist_shell_setup() {
+  local os_name="$1"
+  local brew_path
+  local brew_bin_dir
+  local brew_prefix
+  local brew_sbin_dir
+  local zprofile_path
+  local bash_profile_path
+  local bashrc_path
+  local nushell_config_path
+
+  brew_path="$(command -v brew)"
+  brew_bin_dir="$(dirname "$brew_path")"
+  brew_prefix="$(dirname "$brew_bin_dir")"
+  brew_sbin_dir="$brew_prefix/sbin"
+  zprofile_path="$HOME/.zprofile"
+  bash_profile_path="$HOME/.bash_profile"
+  bashrc_path="$HOME/.bashrc"
+  nushell_config_path="$(prepare_nushell_config_path "$os_name")"
+
+  upsert_managed_block \
+    "$zprofile_path" \
+    "$(shell_setup_block_begin)" \
+    "$(shell_setup_block_end)" \
+    "$(shellenv_block_content "$brew_path" 'zsh')"
+  upsert_managed_block \
+    "$bash_profile_path" \
+    "$(shell_setup_block_begin)" \
+    "$(shell_setup_block_end)" \
+    "$(shellenv_block_content "$brew_path" 'bash')"
+  upsert_managed_block \
+    "$bashrc_path" \
+    "$(shell_setup_block_begin)" \
+    "$(shell_setup_block_end)" \
+    "$(shellenv_block_content "$brew_path" 'bash')"
+  upsert_managed_block \
+    "$nushell_config_path" \
+    "$(nushell_path_block_begin)" \
+    "$(nushell_path_block_end)" \
+    "$(nushell_path_block_content "$brew_bin_dir" "$brew_sbin_dir")"
+
+  print_green 'Configured shell startup for zsh, bash, and nushell'
+}
+
 # Add a Brewfile to the active layer list when it exists, otherwise report the
-# missing optional layer as an amber skip.
+# missing optional layer as a plain-text skip.
 add_candidate_if_present() {
   local candidate_path="$1"
 
@@ -60,7 +304,7 @@ add_candidate_if_present() {
     BREWFILES+=("$candidate_path")
     print_green "Using Brewfile: $candidate_path"
   else
-    print_amber "Skipping missing Brewfile: $candidate_path"
+    print_skip "Skipping missing Brewfile: $candidate_path"
   fi
 }
 
@@ -161,10 +405,10 @@ installed_entry_version() {
 print_local_network_warning() {
   local app_name
 
-  print_amber "$LOCAL_NETWORK_WARNING_TITLE"
+  print_warning "$LOCAL_NETWORK_WARNING_TITLE"
   while IFS= read -r app_name || [[ -n "$app_name" ]]; do
     [[ -n "$app_name" ]] || continue
-    print_amber "Enable Local Network access for: $app_name"
+    print_warning "Enable Local Network access for: $app_name"
   done <<< "$LOCAL_NETWORK_WARNING_APPS"
 }
 
@@ -195,7 +439,7 @@ bootstrap_homebrew_if_missing() {
   fi
 
   require_command curl
-  print_amber 'Homebrew is missing; installing Homebrew'
+  print_warning 'WARNING: Homebrew is missing; installing Homebrew'
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "$HOMEBREW_INSTALL_URL")"
 
   load_homebrew_shellenv
@@ -213,7 +457,7 @@ install_missing_entry() {
   local version_name
 
   if entry_is_installed "$entry_type" "$entry_name"; then
-    print_amber "Skipping installed $entry_type: $entry_name"
+    print_skip "Skipping installed $entry_type: $entry_name"
     return 0
   fi
 
@@ -304,6 +548,7 @@ main() {
   print_green 'Homebrew found'
   version_name="$(homebrew_version)"
   [[ -n "$version_name" ]] && printf 'Homebrew %s\n' "$version_name"
+  persist_shell_setup "$os_name"
 
   resolve_brewfiles "$root_path" "$os_name" "$host_name" "$user_name"
 
