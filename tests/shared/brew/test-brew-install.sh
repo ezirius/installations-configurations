@@ -671,6 +671,7 @@ EOF
 }
 
 test_active_files_are_documented() {
+  assert_starts_with_comment "$ROOT/install" 'root install script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/configs/macos/brew/Brewfile-shared-ezirius" 'active Brewfile should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/brew/brew-install-shared.conf" 'shared brew runtime config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/shared/logging-shared.conf" 'shared logging config should start with a header comment'
@@ -683,21 +684,26 @@ test_active_files_are_documented() {
   assert_starts_with_comment "$ROOT/scripts/macos/system/system-configure" 'active system script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/brew/test-brew-install.sh" 'active test should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/downloads/test-macos-download.sh" 'active macos download test should start with a header comment after shebang'
+  assert_starts_with_comment "$ROOT/tests/shared/shared/test-install.sh" 'active install test should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/shared/test-bootstrap.sh" 'active bootstrap test should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/system/test-system-configure.sh" 'active system test should start with a header comment after shebang'
   assert_starts_with_heading "$ROOT/README.md" 'README should start with a markdown heading'
   assert_starts_with_heading "$ROOT/AGENTS.md" 'AGENTS should start with a markdown heading'
   assert_contains "$ROOT/tests/shared/brew/test-brew-install.sh" 'This test covers:' 'active test header should describe covered behaviours'
   assert_contains "$ROOT/tests/shared/downloads/test-macos-download.sh" 'This test covers:' 'active macos download test header should describe covered behaviours'
+  assert_contains "$ROOT/tests/shared/shared/test-install.sh" 'This test covers:' 'active install test header should describe covered behaviours'
   assert_contains "$ROOT/tests/shared/shared/test-bootstrap.sh" 'This test covers:' 'active bootstrap test header should describe covered behaviours'
   assert_contains "$ROOT/tests/shared/system/test-system-configure.sh" 'This test covers:' 'active system test header should describe covered behaviours'
   assert_contains "$ROOT/README.md" 'All active scripts, libs, tests, configs, and docs should be well documented.' 'README should state the documentation requirement'
+  assert_contains "$ROOT/README.md" '- Public repo bootstrap install into a fixed per-user path' 'README should describe the root install workflow'
   assert_contains "$ROOT/README.md" '- macOS system configuration with host-specific override and shared fallback settings files' 'README should describe the current system config fallback model'
+  assert_contains "$ROOT/README.md" 'curl -fsSL https://raw.githubusercontent.com/ezirius/installations-and-configurations/main/install | bash' 'README should document the public install command'
   assert_contains "$ROOT/README.md" '- `<host>` is either `shared` or the current hostname normalised to lowercase up to the first `.`' 'README should document host normalisation'
   assert_contains "$ROOT/README.md" '- `<username>` is `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`' 'README should document username normalisation'
   assert_contains "$ROOT/README.md" '- leading and trailing `-` characters are trimmed' 'README should document trimming dash runs'
   assert_contains "$ROOT/README.md" '- repeated `-` characters are collapsed' 'README should document collapsing repeated dashes'
   assert_contains "$ROOT/AGENTS.md" 'Keep all scripts, code, libraries, tests, configs, and active docs well documented.' 'AGENTS should state the documentation requirement'
+  assert_contains "$ROOT/AGENTS.md" 'The root `install` bootstrap script is a special public entrypoint used before' 'AGENTS should document the root install bootstrap contract'
 }
 
 test_gitignore_repo_hygiene_rules() {

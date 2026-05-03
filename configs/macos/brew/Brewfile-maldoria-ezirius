@@ -18,16 +18,20 @@
 # brew "bash"
 # brew "mosh"
 # brew "nushell"
+
 brew "opencode"
 brew "podman"
 brew "podman-compose"
 
 # Apps
-cask "brave-browser"
 # cask "ghostty"
+# cask "tailscale-app"
+
+cask "brave-browser"
+# cask "element"
+cask "home-assistant"
 cask "multipass"
 cask "podman-desktop"
-# cask "rustdesk"
-# cask "tailscale-app"
+cask "rustdesk"
 cask "utm"
 cask "vscodium"

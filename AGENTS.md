@@ -7,7 +7,7 @@ shared shell workflow.
 
 The current focus is Homebrew installation through layered Brewfiles.
 Apple Mac restore images, full installer download handling from Apple's
-official sources, and macOS system configuration are also active under the
+official sources, public repo bootstrap installation, and macOS system configuration are also active under the
 same repo layout.
 
 ## Current Active Layout
@@ -26,6 +26,7 @@ also active under the same repo layout.
 
 The active implementation surface is:
 
+- `install`
 - `configs/shared/shared/logging-shared.conf`
 - `configs/shared/brew/brew-install-shared.conf`
 - `configs/macos/brew/Brewfile-shared-ezirius`
@@ -38,10 +39,15 @@ The active implementation surface is:
 - `scripts/macos/system/system-configure`
 - `tests/shared/brew/test-brew-install.sh`
 - `tests/shared/downloads/test-macos-download.sh`
+- `tests/shared/shared/test-install.sh`
 - `tests/shared/shared/test-bootstrap.sh`
 - `tests/shared/system/test-system-configure.sh`
 
 Keep rules, documentation, and behaviour aligned with these files.
+
+The root `install` bootstrap script is a special public entrypoint used before
+the repository exists locally. It is intentionally self-contained and does not
+rely on repo-local helpers or config files at runtime.
 
 External runtime values must live under `configs/`.
 This includes URLs, default paths, labels, tokens, headers, and similar
@@ -352,6 +358,28 @@ Additional current behaviour:
   the full Brewfile reliably
 - leaves Homebrew metadata updates and package upgrades out of the current
   workflow scope
+
+## Current Root Install Behaviour
+
+The root `install` bootstrapper currently:
+
+1. supports `--help` as its only flag
+2. takes no positional arguments
+3. installs into `~/.local/share/installations-and-configurations`
+4. clones from `https://github.com/ezirius/installations-and-configurations.git`
+5. creates the parent install directory when needed
+6. clones the repo when the destination does not exist
+7. updates the repo in place when the destination already contains the same repo
+8. treats HTTPS and SSH GitHub origin URLs for this repo as equivalent
+9. uses `git fetch --prune origin` and `git pull --ff-only origin main` for safe updates
+10. fails clearly when the destination exists but is not this repo
+11. prints the next bootstrap command after a successful clone or update
+
+The current public install command is:
+
+```text
+curl -fsSL https://raw.githubusercontent.com/ezirius/installations-and-configurations/main/install | bash
+```
 
 ## Current Shared Paths
 

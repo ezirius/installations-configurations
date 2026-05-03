@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+
+# Public bootstrap installer for cloning or updating this repository locally.
+#
+# This script is designed to be executed directly from a public URL before the
+# repository exists on disk, so it intentionally keeps its logic self-contained.
+
+set -euo pipefail
+
+REPO_URL='https://github.com/ezirius/installations-and-configurations.git'
+REPO_OWNER='ezirius'
+REPO_NAME='installations-and-configurations'
+REPO_BRANCH='main'
+INSTALL_DESTINATION="$HOME/.local/share/installations-and-configurations"
+INSTALL_COMMAND='curl -fsSL https://raw.githubusercontent.com/ezirius/installations-and-configurations/main/install | bash'
+
+print_green() {
+  if [[ -t 1 ]]; then
+    printf '\033[32m%s\033[0m\n' "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+print_red() {
+  if [[ -t 2 ]]; then
+    printf '\033[31m%s\033[0m\n' "$1" >&2
+  else
+    printf '%s\n' "$1" >&2
+  fi
+}
+
+fail() {
+  print_red "ERROR: $1"
+  exit 1
+}
+
+show_help() {
+  cat <<EOF
+Usage: install [--help]
+
+Clone or update installations-and-configurations into:
+  ~/.local/share/installations-and-configurations
+
+Public install command:
+  $INSTALL_COMMAND
+
+If the destination already contains the same repository, install updates it in
+place with safe fast-forward git commands.
+EOF
+}
+
+normalize_remote_url() {
+  local remote_url="$1"
+
+  remote_url="${remote_url%.git}"
+  remote_url="${remote_url#ssh://}"
+  remote_url="${remote_url#git@}"
+  remote_url="${remote_url#https://}"
+  remote_url="${remote_url#http://}"
+  remote_url="${remote_url#github.com:}"
+  remote_url="${remote_url#github.com/}"
+  remote_url="${remote_url#git@github.com:}"
+  remote_url="${remote_url#git@github.com/}"
+
+  printf '%s\n' "$remote_url"
+}
+
+is_same_repo_remote() {
+  local remote_url="$1"
+  local normalized_remote
+
+  normalized_remote="$(normalize_remote_url "$remote_url")"
+  [[ "$normalized_remote" == "$REPO_OWNER/$REPO_NAME" ]]
+}
+
+require_git() {
+  command -v git >/dev/null 2>&1 || fail 'Required command is missing: git'
+}
+
+clone_repo() {
+  command mkdir -p "$(dirname "$INSTALL_DESTINATION")"
+  git clone "$REPO_URL" "$INSTALL_DESTINATION"
+  print_green "Installed installations-and-configurations to $INSTALL_DESTINATION"
+}
+
+update_repo() {
+  if ! git -C "$INSTALL_DESTINATION" fetch --prune origin; then
+    fail 'Unable to fetch updates for the existing installations-and-configurations clone.'
+  fi
+
+  if ! git -C "$INSTALL_DESTINATION" pull --ff-only origin "$REPO_BRANCH"; then
+    fail 'Unable to fast-forward the existing installations-and-configurations clone.'
+  fi
+
+  print_green "Updated installations-and-configurations in $INSTALL_DESTINATION"
+}
+
+print_next_step() {
+  printf 'Next: %s\n' "$INSTALL_DESTINATION/scripts/shared/shared/bootstrap"
+}
+
+main() {
+  local origin_url
+
+  if [[ "${1-}" == '--help' ]]; then
+    show_help
+    exit 0
+  fi
+
+  [[ $# -eq 0 ]] || fail 'install takes no arguments. Use --help for usage.'
+
+  require_git
+
+  if [[ ! -e "$INSTALL_DESTINATION" ]]; then
+    clone_repo
+    print_next_step
+    exit 0
+  fi
+
+  [[ -d "$INSTALL_DESTINATION" ]] || fail "Existing install path is not a directory: $INSTALL_DESTINATION"
+
+  if ! git -C "$INSTALL_DESTINATION" rev-parse --show-toplevel >/dev/null 2>&1; then
+    fail "Existing install path is not a git repository: $INSTALL_DESTINATION"
+  fi
+
+  origin_url="$(git -C "$INSTALL_DESTINATION" remote get-url origin 2>/dev/null)" \
+    || fail "Existing install path points to a different repository: $INSTALL_DESTINATION"
+
+  if ! is_same_repo_remote "$origin_url"; then
+    fail "Existing install path points to a different repository: $INSTALL_DESTINATION"
+  fi
+
+  update_repo
+  print_next_step
+}
+
+main "$@"

@@ -12,6 +12,7 @@ The current active repo layout is intentionally small:
 
 The current active workflows are:
 
+- Public repo bootstrap install into a fixed per-user path
 - Homebrew installation through layered Brewfiles
 - Apple Mac restore images and full installer downloads from Apple's official sources
 - macOS system configuration with host-specific override and shared fallback settings files
@@ -20,6 +21,7 @@ The current active workflows are:
 
 The current active implementation surface is:
 
+- `install`
 - `configs/shared/shared/logging-shared.conf`
 - `configs/shared/brew/brew-install-shared.conf`
 - `configs/macos/brew/Brewfile-shared-ezirius`
@@ -32,11 +34,12 @@ The current active implementation surface is:
 - `scripts/macos/system/system-configure`
 - `tests/shared/brew/test-brew-install.sh`
 - `tests/shared/downloads/test-macos-download.sh`
+- `tests/shared/shared/test-install.sh`
 - `tests/shared/shared/test-bootstrap.sh`
 - `tests/shared/system/test-system-configure.sh`
 
 These files are the current source of truth for the active Brew, downloads,
-bootstrap, and system workflows.
+install, bootstrap, and system workflows.
 Repository documentation should stay aligned with them.
 
 External runtime values must live under `configs/`.
@@ -61,6 +64,13 @@ The current shared entrypoints are:
 
 - `scripts/shared/brew/brew-install`
 - `scripts/shared/shared/bootstrap`
+
+The root public bootstrap entrypoint is:
+
+- `install`
+
+Unlike the shared entrypoints under `scripts/`, the root `install` bootstrapper
+supports only `--help` before running its fixed install behaviour.
 
 The current macOS-only entrypoints are:
 
@@ -158,6 +168,29 @@ The script does not implement architecture selection. Homebrew handles ARM/x86 s
 Homebrew metadata updates and package upgrades are currently outside this
 workflow's scope.
 
+## `install`
+
+This root script is the public bootstrap installer for the repository itself.
+
+Behaviour:
+
+1. Supports `--help` as its only flag.
+2. Installs into `~/.local/share/installations-and-configurations`.
+3. Uses the public HTTPS GitHub repo URL for fresh clones.
+4. Creates the parent install directory when it is missing.
+5. Clones the repo when the destination does not exist.
+6. Updates the repo in place when the destination already contains the same repo.
+7. Treats HTTPS and SSH GitHub origin URLs for this repo as equivalent.
+8. Uses `git fetch --prune origin` and `git pull --ff-only origin main` for updates.
+9. Fails clearly when the destination exists but is not this repo.
+10. Prints the next bootstrap command after a successful clone or update.
+
+The public install command is:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ezirius/installations-and-configurations/main/install | bash
+```
+
 Nushell config resolution order is:
 
 1. `$XDG_CONFIG_HOME/nushell/config.nu` when `XDG_CONFIG_HOME` is set
@@ -243,6 +276,7 @@ The current scripts are covered by:
 
 - `tests/shared/brew/test-brew-install.sh`
 - `tests/shared/downloads/test-macos-download.sh`
+- `tests/shared/shared/test-install.sh`
 - `tests/shared/shared/test-bootstrap.sh`
 - `tests/shared/system/test-system-configure.sh`
 
@@ -251,6 +285,7 @@ Run it with:
 ```bash
 tests/shared/brew/test-brew-install.sh
 tests/shared/downloads/test-macos-download.sh
+tests/shared/shared/test-install.sh
 tests/shared/shared/test-bootstrap.sh
 tests/shared/system/test-system-configure.sh
 ```

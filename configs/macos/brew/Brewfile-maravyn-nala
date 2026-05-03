@@ -1,4 +1,4 @@
-# Shared macOS Brewfile for user 'ezirius'.
+# Host-specific macOS Brewfile for host 'maravyn' and user 'nala'.
 #
 # Folder contract:
 # - configs/<os>/<application>/
@@ -7,27 +7,27 @@
 # Filename contract:
 # - Brewfile-<host>-<username>
 # - 'shared' in the host slot means all hosts for that OS scope
-# - this file is loaded before any matching host-specific Brewfile in the same
-#   application folder
+# - this file adds host-specific entries on top of any matching shared file in
+#   the same application folder
 #
 # Content contract:
 # - use only 'brew "..."' and 'cask "..."' entries
 # - unsupported directives are rejected by scripts/shared/brew/brew-install
 
 # CLI tools
-brew "bash"
-brew "mosh"
-brew "nushell"
+# brew "bash"
+# brew "mosh"
+# brew "nushell"
 
 # brew "opencode"
 # brew "podman"
 # brew "podman-compose"
 
 # Apps
-cask "ghostty"
-cask "tailscale-app"
+# cask "ghostty"
+# cask "tailscale-app"
 
-# cask "brave-browser"
+cask "brave-browser"
 # cask "element"
 # cask "home-assistant"
 # cask "multipass"
