@@ -168,6 +168,11 @@ The script does not implement architecture selection. Homebrew handles ARM/x86 s
 Homebrew metadata updates and package upgrades are currently outside this
 workflow's scope.
 
+When the workflow bootstraps Homebrew on macOS, interactive terminals may
+prompt for `sudo` as part of Homebrew's official installer. Non-interactive
+runs keep Homebrew bootstrap non-interactive and fail clearly if a password
+prompt would be required.
+
 ## `install`
 
 This root script is the public bootstrap installer for the repository itself.

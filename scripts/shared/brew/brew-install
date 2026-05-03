@@ -438,6 +438,19 @@ homebrew_version() {
   printf '%s\n' "$first_line"
 }
 
+homebrew_bootstrap_is_interactive() {
+  case "${TEST_FORCE_INTERACTIVE:-}" in
+    1)
+      return 0
+      ;;
+    0)
+      return 1
+      ;;
+  esac
+
+  [[ -t 0 && -t 1 ]]
+}
+
 # Install Homebrew when it is missing, then log the bootstrap install.
 bootstrap_homebrew_if_missing() {
   local version_name
@@ -448,7 +461,12 @@ bootstrap_homebrew_if_missing() {
 
   require_command curl
   print_warning 'WARNING: Homebrew is missing; installing Homebrew'
-  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "$HOMEBREW_INSTALL_URL")"
+
+  if homebrew_bootstrap_is_interactive; then
+    /bin/bash -c "$(curl -fsSL "$HOMEBREW_INSTALL_URL")"
+  elif ! NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "$HOMEBREW_INSTALL_URL")"; then
+    fail 'Homebrew bootstrap requires sudo, but this run is non-interactive and cannot prompt for a password. Install Homebrew first or rerun from an interactive terminal.'
+  fi
 
   load_homebrew_shellenv
   command -v brew >/dev/null 2>&1 || fail 'Homebrew installation did not provide brew'

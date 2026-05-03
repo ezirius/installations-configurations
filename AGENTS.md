@@ -356,6 +356,8 @@ Additional current behaviour:
 - creates the CSV header automatically when the log file does not exist
 - isolates Brewfile processing input from child commands so one run can process
   the full Brewfile reliably
+- allows Homebrew's official installer to prompt for sudo in interactive macOS sessions
+- fails clearly when non-interactive Homebrew bootstrap would require a password prompt
 - leaves Homebrew metadata updates and package upgrades out of the current
   workflow scope
 

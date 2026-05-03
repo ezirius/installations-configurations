@@ -155,6 +155,14 @@ esac'
 if [[ "${TEST_BOOTSTRAP_BREW:-0}" == "1" ]]; then
   cat <<'INSTALLER'
 #!/usr/bin/env bash
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf 'NONINTERACTIVE=%s\n' "${NONINTERACTIVE:-}" > "$STATE_DIR/bootstrap-env.log"
+
+if [[ "${TEST_BOOTSTRAP_INSTALLER_FAIL:-0}" == "1" ]]; then
+  printf '%s\n' 'Need sudo access on macOS (e.g. the user ezirius needs to be an Administrator)!' >&2
+  exit 1
+fi
+
 cat > "${TEST_FAKE_BIN:?}/brew" <<'BREWEOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -865,6 +873,87 @@ EOF
   assert_not_contains "$temp_dir/state/brew.log" 'update' 'bootstrap path should not run brew update'
 }
 
+test_bootstraps_homebrew_interactively_when_tty_is_available() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! TEST_BOOTSTRAP_BREW=1 TEST_FORCE_INTERACTIVE=1 HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should bootstrap Homebrew interactively when a tty is available'
+  fi
+
+  assert_contains "$temp_dir/state/bootstrap-env.log" 'NONINTERACTIVE=' 'interactive bootstrap should not force NONINTERACTIVE=1'
+  assert_not_contains "$temp_dir/state/bootstrap-env.log" 'NONINTERACTIVE=1' 'interactive bootstrap should allow the Homebrew installer to prompt'
+}
+
+test_bootstraps_homebrew_non_interactively_when_tty_is_unavailable() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! TEST_BOOTSTRAP_BREW=1 TEST_FORCE_INTERACTIVE=0 HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should bootstrap Homebrew non-interactively when no tty is available'
+  fi
+
+  assert_contains "$temp_dir/state/bootstrap-env.log" 'NONINTERACTIVE=1' 'non-interactive bootstrap should force NONINTERACTIVE=1'
+}
+
+test_fails_clearly_when_non_interactive_homebrew_bootstrap_needs_sudo() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if TEST_BOOTSTRAP_BREW=1 TEST_BOOTSTRAP_INSTALLER_FAIL=1 TEST_FORCE_INTERACTIVE=0 HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail clearly when non-interactive Homebrew bootstrap cannot prompt for sudo'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Homebrew bootstrap requires sudo, but this run is non-interactive and cannot prompt for a password. Install Homebrew first or rerun from an interactive terminal.' 'non-interactive bootstrap should explain the sudo prompt limitation clearly'
+}
+
 test_fails_clearly_when_bootstrap_curl_is_missing() {
   local temp_dir
   local output_file
@@ -1571,6 +1660,9 @@ test_gitignore_repo_hygiene_rules
 test_logs_new_installs_to_csv
 test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it
+test_bootstraps_homebrew_interactively_when_tty_is_available
+test_bootstraps_homebrew_non_interactively_when_tty_is_unavailable
+test_fails_clearly_when_non_interactive_homebrew_bootstrap_needs_sudo
 test_fails_clearly_when_bootstrap_curl_is_missing
 test_requires_brew_installer_config_file
 test_requires_brew_installer_values_from_config_file
