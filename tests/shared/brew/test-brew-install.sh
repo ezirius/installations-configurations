@@ -679,6 +679,11 @@ EOF
 }
 
 test_active_files_are_documented() {
+  [[ -x "$ROOT/install" ]] || fail 'root install script should be executable'
+  [[ -x "$ROOT/scripts/shared/brew/brew-install" ]] || fail 'active brew script should be executable'
+  [[ -x "$ROOT/scripts/shared/shared/bootstrap" ]] || fail 'active bootstrap script should be executable'
+  [[ -x "$ROOT/scripts/macos/downloads/macos-download" ]] || fail 'active macos download script should be executable'
+  [[ -x "$ROOT/scripts/macos/system/system-configure" ]] || fail 'active system script should be executable'
   assert_starts_with_comment "$ROOT/install" 'root install script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/configs/macos/brew/Brewfile-shared-ezirius" 'active Brewfile should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/brew/brew-install-shared.conf" 'shared brew runtime config should start with a header comment'
