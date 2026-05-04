@@ -185,7 +185,8 @@ Behaviour:
 3. Load Homebrew into `PATH` for the running script if it is installed in a standard prefix.
 4. Install Homebrew itself if it is still missing, then log `Installed,brew,<version>`.
 5. Persist Homebrew command availability for future shells:
-   - `~/.zprofile` for `zsh`
+   - `~/.zshenv` with PATH-only Homebrew entries for non-interactive `zsh` command support
+   - `~/.zprofile` for full `zsh` shellenv setup
    - `~/.bash_profile` and `~/.bashrc` for Bash
    - Nushell `config.nu` with `PATH`-only Homebrew entries stored in the canonical `.config` location
 6. Resolve matching Brewfiles.
@@ -401,7 +402,7 @@ Behaviour:
 12. Generate missing SSH server host keys when needed and enforce an Ed25519-only host key set.
 13. Validate `sshd` config before reloading when the managed SSH config changes.
 14. Validate the final merged config after all matching layers load.
-15. Append one `Updated` CSV row for each managed setting that actually changes.
+15. Append one `Configured` CSV row for each managed setting that actually changes.
 
 In the current first SSH management pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
 Other or multiple SSH allow-user values are currently unsupported.

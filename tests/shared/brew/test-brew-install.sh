@@ -314,6 +314,10 @@ shell_block_marker() {
   printf '%s\n' '# >>> installations-and-configurations homebrew shellenv >>>'
 }
 
+zshenv_block_marker() {
+  printf '%s\n' '# >>> installations-and-configurations homebrew path >>>'
+}
+
 nushell_block_marker() {
   printf '%s\n' '# >>> installations-and-configurations homebrew path >>>'
 }
@@ -339,9 +343,12 @@ assert_shell_setup_files() {
   local nushell_config_path="$3"
   local compatibility_dir
 
+  assert_contains "$home_path/.zshenv" 'export PATH="' 'writes zshenv Homebrew path block'
+  assert_contains "$home_path/.zshenv" ':$PATH"' 'appends the existing PATH in zshenv'
   assert_contains "$home_path/.zprofile" 'brew shellenv zsh' 'writes zsh shellenv block'
   assert_contains "$home_path/.bash_profile" 'brew shellenv bash' 'writes bash profile shellenv block'
   assert_contains "$home_path/.bashrc" 'brew shellenv bash' 'writes bashrc shellenv block'
+  assert_occurrences "$home_path/.zshenv" "$(zshenv_block_marker)" 1 'writes one zshenv managed block'
   assert_occurrences "$home_path/.zprofile" "$(shell_block_marker)" 1 'writes one zsh managed block'
   assert_occurrences "$home_path/.bash_profile" "$(shell_block_marker)" 1 'writes one bash profile managed block'
   assert_occurrences "$home_path/.bashrc" "$(shell_block_marker)" 1 'writes one bashrc managed block'
@@ -1556,6 +1563,7 @@ EOF
     fail 'second run should succeed when testing shell setup idempotence'
   fi
 
+  assert_occurrences "$home_path/.zshenv" "$(zshenv_block_marker)" 1 'zshenv managed block should not duplicate on rerun'
   assert_occurrences "$home_path/.zprofile" "$(shell_block_marker)" 1 'zprofile managed block should not duplicate on rerun'
   assert_occurrences "$home_path/.bash_profile" "$(shell_block_marker)" 1 'bash profile managed block should not duplicate on rerun'
   assert_occurrences "$home_path/.bashrc" "$(shell_block_marker)" 1 'bashrc managed block should not duplicate on rerun'
@@ -1582,6 +1590,11 @@ test_preserves_existing_shell_config_content() {
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
   setup_brew_stub "$temp_dir"
+
+  cat > "$home_path/.zshenv" <<'EOF'
+# existing zshenv line
+export FOO=bar
+EOF
 
   cat > "$home_path/.zprofile" <<'EOF'
 # existing zprofile line
@@ -1612,6 +1625,7 @@ EOF
     fail 'script should preserve existing shell config content'
   fi
 
+  assert_contains "$home_path/.zshenv" 'export FOO=bar' 'preserves existing zshenv content'
   assert_contains "$home_path/.zprofile" "alias ll='ls -l'" 'preserves existing zprofile content'
   assert_contains "$home_path/.bash_profile" 'export EDITOR=vi' 'preserves existing bash profile content'
   assert_contains "$home_path/.bashrc" 'export HISTSIZE=1000' 'preserves existing bashrc content'

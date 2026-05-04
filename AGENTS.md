@@ -364,12 +364,13 @@ The active installer:
 3. Loads Homebrew into `PATH` when installed in a standard prefix.
 4. Installs Homebrew itself if it is still missing.
 5. Logs Homebrew itself as `Installed,brew,<version>` when the workflow installs it.
-6. Resolves all matching Brewfiles.
-7. Parses each Brewfile in order.
-8. Installs only missing formulae and casks.
-9. Skips already installed entries.
-10. Fails clearly on unsupported Brewfile lines.
-11. Logs each successful install to the per-host CSV activity log.
+6. Persists Homebrew PATH for non-interactive `zsh` command execution through `~/.zshenv`.
+7. Resolves all matching Brewfiles.
+8. Parses each Brewfile in order.
+9. Installs only missing formulae and casks.
+10. Skips already installed entries.
+11. Fails clearly on unsupported Brewfile lines.
+12. Logs each successful install to the per-host CSV activity log.
 
 Additional current behaviour:
 

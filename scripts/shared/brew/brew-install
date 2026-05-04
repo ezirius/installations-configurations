@@ -71,6 +71,14 @@ shell_setup_block_end() {
   printf '%s\n' '# <<< installations-and-configurations homebrew shellenv <<<'
 }
 
+zshenv_path_block_begin() {
+  printf '%s\n' '# >>> installations-and-configurations homebrew path >>>'
+}
+
+zshenv_path_block_end() {
+  printf '%s\n' '# <<< installations-and-configurations homebrew path <<<'
+}
+
 nushell_path_block_begin() {
   printf '%s\n' '# >>> installations-and-configurations homebrew path >>>'
 }
@@ -84,6 +92,13 @@ shellenv_block_content() {
   local shell_name="$2"
 
   printf 'eval "$(%s shellenv %s)"\n' "$brew_path" "$shell_name"
+}
+
+zshenv_path_block_content() {
+  local brew_bin_dir="$1"
+  local brew_sbin_dir="$2"
+
+  printf 'export PATH="%s:%s:$PATH"\n' "$brew_bin_dir" "$brew_sbin_dir"
 }
 
 nushell_path_block_content() {
@@ -269,6 +284,7 @@ persist_shell_setup() {
   local brew_bin_dir
   local brew_prefix
   local brew_sbin_dir
+  local zshenv_path
   local zprofile_path
   local bash_profile_path
   local bashrc_path
@@ -278,12 +294,18 @@ persist_shell_setup() {
   brew_bin_dir="$(dirname "$brew_path")"
   brew_prefix="$(dirname "$brew_bin_dir")"
   brew_sbin_dir="$brew_prefix/sbin"
+  zshenv_path="$HOME/.zshenv"
   zprofile_path="$HOME/.zprofile"
   bash_profile_path="$HOME/.bash_profile"
   bashrc_path="$HOME/.bashrc"
   prepare_nushell_config_path "$os_name"
   nushell_config_path="$PREPARED_NUSHELL_CONFIG_PATH"
 
+  upsert_managed_block \
+    "$zshenv_path" \
+    "$(zshenv_path_block_begin)" \
+    "$(zshenv_path_block_end)" \
+    "$(zshenv_path_block_content "$brew_bin_dir" "$brew_sbin_dir")"
   upsert_managed_block \
     "$zprofile_path" \
     "$(shell_setup_block_begin)" \
