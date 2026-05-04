@@ -299,7 +299,8 @@ Current action values:
 
 - `Installed` for Homebrew itself when `scripts/shared/brew/brew-install` installs it
 - `Installed` from `scripts/shared/brew/brew-install`
-- `Updated` from `scripts/macos/system/system-configure` when a managed system setting changes
+- `Updated` for software updates
+- `Configured` from `scripts/macos/system/system-configure` when a managed system setting changes
 
 Dates and times are written in South Africa time using the
 `Africa/Johannesburg` timezone.
@@ -397,9 +398,10 @@ Behaviour:
 9. Manage a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled.
 10. Deploy the configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames.
 11. Revoke configured managed keys when they are removed from the current SSH config.
-12. Validate `sshd` config before reloading when the managed SSH config changes.
-13. Validate the final merged config after all matching layers load.
-14. Append one `Updated` CSV row for each managed setting that actually changes.
+12. Generate missing SSH server host keys when needed and enforce an Ed25519-only host key set.
+13. Validate `sshd` config before reloading when the managed SSH config changes.
+14. Validate the final merged config after all matching layers load.
+15. Append one `Updated` CSV row for each managed setting that actually changes.
 
 In the current first SSH management pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
 Other or multiple SSH allow-user values are currently unsupported.
@@ -407,6 +409,10 @@ Other or multiple SSH allow-user values are currently unsupported.
 The system workflow treats `~/.ssh/authorized_keys.d/` as the repo-managed SSH key directory.
 Configured `.pub` files are deployed there using their exact filenames.
 Managed `.pub` files in that directory that are not present in the current `SSHD_LOGIN_KEY_FILES` value are removed.
+
+The workflow always enforces Ed25519-only SSH server host keys.
+Non-Ed25519 SSH server host keys are removed.
+This is separate from repo-managed login public keys in `authorized_keys.d`.
 
 The current managed macOS system settings are:
 

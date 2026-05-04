@@ -231,7 +231,8 @@ For shared entrypoint CLI output, keep the contract simple:
 Action values:
 
 - installs: `Installed`
-- upgrades: `Updated`
+- software updates: `Updated`
+- system configuration changes: `Configured`
 - removals: `Removed`
 
 When the workflow installs Homebrew itself, log it as:
@@ -242,7 +243,7 @@ When the workflow installs Homebrew itself, log it as:
 
 When the system workflow changes a managed setting, log it as:
 
-- action: `Updated`
+- action: `Configured`
 - application: the stable managed setting token
 - version: empty
 
@@ -479,9 +480,10 @@ Important current limitation:
 10. manages a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled
 11. deploys configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames
 12. revokes configured managed keys when they are removed from the current SSH config
-13. validates `sshd` config before reloading when the managed SSH config changes
-14. validates the final merged config after all matching layers load
-15. logs each managed setting change to the shared per-host CSV activity log
+13. generates missing SSH server host keys when needed and enforces an Ed25519-only host key set
+14. validates `sshd` config before reloading when the managed SSH config changes
+15. validates the final merged config after all matching layers load
+16. logs each managed setting change to the shared per-host CSV activity log
 
 When SSH is enabled in the current first pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
 Other or multiple SSH allow-user values are currently unsupported.
@@ -489,3 +491,7 @@ Other or multiple SSH allow-user values are currently unsupported.
 The system workflow treats `~/.ssh/authorized_keys.d/` as the repo-managed SSH key directory.
 Configured `.pub` files are deployed there using their exact filenames.
 Managed `.pub` files in that directory that are not present in the current `SSHD_LOGIN_KEY_FILES` value are removed.
+
+The workflow always enforces Ed25519-only SSH server host keys.
+Non-Ed25519 SSH server host keys are removed.
+This is separate from repo-managed login public keys in `authorized_keys.d`.

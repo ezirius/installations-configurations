@@ -240,6 +240,7 @@ render_sshd_managed_config() {
   allow_agent_forwarding="$(bool_to_sshd_yes_no "$SSHD_ALLOW_AGENT_FORWARDING")"
 
   cat <<EOF
+HostKey $SYSTEM_SSHD_HOST_ED25519_KEY_PATH
 PasswordAuthentication $password_authentication
 KbdInteractiveAuthentication $kbd_interactive_authentication
 ChallengeResponseAuthentication $challenge_response_authentication
@@ -311,6 +312,51 @@ remove_user_owned_file_if_present() {
   [[ -e "$target_file_path" ]] || return 1
   command rm -f "$target_file_path"
   return 0
+}
+
+host_key_public_path() {
+  printf '%s.pub\n' "$1"
+}
+
+ed25519_host_key_exists() {
+  [[ -f "$SYSTEM_SSHD_HOST_ED25519_KEY_PATH" ]]
+}
+
+remove_non_ed25519_host_keys() {
+  local host_keys_changed='1'
+  local key_path
+
+  for key_path in "$SYSTEM_SSHD_HOST_RSA_KEY_PATH" "$SYSTEM_SSHD_HOST_ECDSA_KEY_PATH"; do
+    if remove_root_owned_file_if_present "$key_path"; then
+      host_keys_changed='0'
+    fi
+    if remove_root_owned_file_if_present "$(host_key_public_path "$key_path")"; then
+      host_keys_changed='0'
+    fi
+  done
+
+  [[ "$host_keys_changed" == '0' ]]
+}
+
+ensure_sshd_host_keys() {
+  local host_keys_changed='1'
+
+  if ! ed25519_host_key_exists; then
+    if ! sudo ssh-keygen -A; then
+      fail 'Unable to generate missing SSH host keys with ssh-keygen -A'
+    fi
+    host_keys_changed='0'
+  fi
+
+  ed25519_host_key_exists || fail "Required SSH host key is missing after generation: $SYSTEM_SSHD_HOST_ED25519_KEY_PATH"
+
+  if remove_non_ed25519_host_keys; then
+    host_keys_changed='0'
+  fi
+
+  if [[ "$host_keys_changed" == '0' ]]; then
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN" ''
+  fi
 }
 
 sync_managed_authorized_key_files() {
@@ -408,18 +454,20 @@ apply_ssh_settings() {
   user_home="$(user_home_directory 'ezirius')"
   sshd_config_path="$(managed_sshd_config_path)"
 
+  ensure_sshd_host_keys
+
   if [[ "$SSH_REMOTE_LOGIN_ENABLED" == 'false' ]]; then
     if current_remote_login_enabled; then
       sudo systemsetup -setremotelogin off
-      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_REMOTE_LOGIN_LOG_TOKEN" ''
+      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_REMOTE_LOGIN_LOG_TOKEN" ''
     fi
 
     if remove_root_owned_file_if_present "$sshd_config_path"; then
-      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
+      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
     fi
 
     if remove_managed_authorized_key_files "$root_path" "$user_home"; then
-      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
+      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
     fi
 
     return 0
@@ -427,12 +475,12 @@ apply_ssh_settings() {
 
   if sync_managed_authorized_key_files "$root_path" "$user_home"; then
     authorized_keys_changed='0'
-    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
   fi
 
   if write_root_owned_file_if_changed "$sshd_config_path" "$(render_sshd_managed_config)"; then
     sshd_config_changed='0'
-    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
   fi
 
   if [[ "$sshd_config_changed" == '0' ]] || ! current_remote_login_enabled; then
@@ -445,7 +493,7 @@ apply_ssh_settings() {
     fi
   else
     sudo systemsetup -setremotelogin on
-    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_REMOTE_LOGIN_LOG_TOKEN" ''
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_REMOTE_LOGIN_LOG_TOKEN" ''
   fi
 
   [[ "$authorized_keys_changed" == '0' ]] && :
@@ -472,7 +520,7 @@ set_dock_bool() {
 
   defaults write "$SYSTEM_DOCK_DOMAIN" "$key_name" -bool "$desired_value"
   DOCK_CHANGED='1'
-  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$application_name" ''
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$application_name" ''
 }
 
 # Apply the managed Dock settings as one grouped operation.
@@ -520,7 +568,7 @@ apply_pmset_sleep() {
 
   sudo -v
   sudo pmset "$scope_flag" sleep "$desired_value"
-  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_PMSET_SLEEP_LOG_TOKEN" ''
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_PMSET_SLEEP_LOG_TOKEN" ''
 }
 
 # Validate that every required config value was provided by the chosen file.
@@ -549,9 +597,13 @@ validate_config() {
   [[ -n "${SYSTEM_REMOTE_LOGIN_LOG_TOKEN:-}" ]] || fail 'SYSTEM_REMOTE_LOGIN_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_SSHD_CONFIG_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_CONFIG_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_SSHD_CONFIG_DIR:-}" ]] || fail 'SYSTEM_SSHD_CONFIG_DIR is not set in the managed macOS system config'
   [[ -n "${SYSTEM_SSHD_MANAGED_FILE_NAME:-}" ]] || fail 'SYSTEM_SSHD_MANAGED_FILE_NAME is not set in the managed macOS system config'
   [[ -n "${SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME:-}" ]] || fail 'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_HOST_ED25519_KEY_PATH:-}" ]] || fail 'SYSTEM_SSHD_HOST_ED25519_KEY_PATH is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_HOST_RSA_KEY_PATH:-}" ]] || fail 'SYSTEM_SSHD_HOST_RSA_KEY_PATH is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_HOST_ECDSA_KEY_PATH:-}" ]] || fail 'SYSTEM_SSHD_HOST_ECDSA_KEY_PATH is not set in the managed macOS system config'
 
   validate_repo_bool_value 'DOCK_AUTO_HIDE' "$DOCK_AUTO_HIDE"
   validate_repo_bool_value 'DOCK_REORDER_SPACES_BY_RECENT_USE' "$DOCK_REORDER_SPACES_BY_RECENT_USE"
@@ -604,6 +656,7 @@ main() {
   require_command launchctl
   require_command dscl
   require_command cmp
+  require_command ssh-keygen
 
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
   ROOT_PATH="$root_path"

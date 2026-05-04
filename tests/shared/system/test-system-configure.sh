@@ -232,6 +232,28 @@ fi
 user_name="${user_record##*/}"
 printf "NFSHomeDirectory: %s/%s\n" "${TEST_HOME_ROOT:?}" "$user_name"'
 
+  write_command_stub "$fake_bin/ssh-keygen" '#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf "%s\n" "$*" >> "$STATE_DIR/ssh-keygen.log"
+
+if [[ "$1" != "-A" ]]; then
+  exit 1
+fi
+
+if [[ "${TEST_SSH_KEYGEN_FAIL:-0}" == "1" ]]; then
+  printf "%s\n" "ssh-keygen: failed to generate host keys" >&2
+  exit 1
+fi
+
+if [[ "${TEST_SSH_KEYGEN_CREATE_ED25519:-1}" == "1" ]]; then
+  key_path="${TEST_HOST_KEY_DIR:?}/ssh_host_ed25519_key"
+  mkdir -p "$(dirname "$key_path")"
+  printf "%s\n" "host-private-key" > "$key_path"
+  printf "%s\n" "host-public-key" > "$key_path.pub"
+fi'
+
   write_command_stub "$fake_bin/killall" '#!/usr/bin/env bash
 set -euo pipefail
 
@@ -245,6 +267,7 @@ run_in_fake_repo() {
 
   TEST_STATE_DIR="$temp_dir/state" \
   TEST_HOME_ROOT="$temp_dir/home" \
+  TEST_HOST_KEY_DIR="$temp_dir/state/etc/ssh" \
   PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$temp_dir/scripts/macos/system/system-configure" > "$output_file" 2>&1
 }
@@ -280,9 +303,13 @@ SSHD_ALLOW_AGENT_FORWARDING=false
 SYSTEM_REMOTE_LOGIN_LOG_TOKEN="system-remote-login"
 SYSTEM_SSHD_CONFIG_LOG_TOKEN="system-sshd-config"
 SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN="system-sshd-authorized-key"
+SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN="system-sshd-host-keys"
 SYSTEM_SSHD_CONFIG_DIR="$temp_dir/state/etc/ssh/sshd_config.d"
 SYSTEM_SSHD_MANAGED_FILE_NAME="90-installations-and-configurations.conf"
 SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME="authorized_keys.d"
+SYSTEM_SSHD_HOST_ED25519_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ed25519_key"
+SYSTEM_SSHD_HOST_RSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_rsa_key"
+SYSTEM_SSHD_HOST_ECDSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ecdsa_key"
 EOF
 }
 
@@ -350,6 +377,12 @@ managed_sshd_config_path() {
 managed_authorized_keys_dir() {
   local temp_dir="$1"
   printf '%s\n' "$temp_dir/home/ezirius/.ssh/authorized_keys.d"
+}
+
+host_key_path() {
+  local temp_dir="$1"
+  local key_name="$2"
+  printf '%s\n' "$temp_dir/state/etc/ssh/$key_name"
 }
 
 test_help_output() {
@@ -569,9 +602,9 @@ test_applies_shared_shared_system_config_on_portable_mac() {
   assert_contains "$temp_dir/state/sudo.log" '-v' 'validates sudo before pmset change'
   assert_contains "$temp_dir/state/pmset.log" '-c sleep 0' 'uses portable pmset scope on battery-capable Macs'
   assert_contains "$log_file" 'date,time,host,action,application,version' 'system log file should contain csv header'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-autohide,' 'logs Dock auto-hide change'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs Dock spaces change'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs pmset sleep change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-dock-autohide,' 'logs Dock auto-hide change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-dock-mru-spaces,' 'logs Dock spaces change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-pmset-sleep,' 'logs pmset sleep change'
 }
 
 test_prefers_x_shared_over_shared_x_when_both_match() {
@@ -601,7 +634,7 @@ test_prefers_x_shared_over_shared_x_when_both_match() {
   fi
 
   assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool false' 'host-shared override should win over user-shared override'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs the host-shared override application'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-dock-mru-spaces,' 'logs the host-shared override application'
 }
 
 test_prefers_x_x_over_all_earlier_layers() {
@@ -632,7 +665,7 @@ test_prefers_x_x_over_all_earlier_layers() {
   fi
 
   assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock autohide -bool false' 'host-user override should win over earlier shared layers'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-autohide,' 'logs the host-user override application'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-dock-autohide,' 'logs the host-user override application'
 }
 
 test_applies_non_portable_sleep_change_with_a_scope() {
@@ -661,7 +694,7 @@ test_applies_non_portable_sleep_change_with_a_scope() {
 
   assert_contains "$temp_dir/state/sudo.log" '-v' 'validates sudo before non-portable pmset change'
   assert_contains "$temp_dir/state/pmset.log" '-a sleep 0' 'uses non-portable pmset scope on desktop Macs'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs changed non-portable pmset setting'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-pmset-sleep,' 'logs changed non-portable pmset setting'
 }
 
 test_partial_override_files_inherit_required_values_from_baseline() {
@@ -690,7 +723,7 @@ test_partial_override_files_inherit_required_values_from_baseline() {
   fi
 
   assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool true' 'partial host override should inherit required keys from baseline and apply its override'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs the inherited partial override change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-dock-mru-spaces,' 'logs the inherited partial override change'
 }
 
 test_skips_dock_restart_when_dock_settings_are_already_correct() {
@@ -752,7 +785,115 @@ test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbatter
 
   assert_contains "$temp_dir/state/sudo.log" '-v' 'validates sudo before portable pmset change'
   assert_contains "$temp_dir/state/pmset.log" '-c sleep 0' 'uses portable pmset scope when battery power is reported without the InternalBattery token'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs the portable sleep change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-pmset-sleep,' 'logs the portable sleep change'
+}
+
+test_generates_missing_ed25519_host_key() {
+  local temp_dir
+  local output_file
+  local log_file
+  local host_key_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  host_key_file="$(host_key_path "$temp_dir" 'ssh_host_ed25519_key')"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  : > "$temp_dir/state/ssh-keygen.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+
+  if ! TEST_HOST_KEY_DIR="$temp_dir/state/etc/ssh" TEST_REMOTE_LOGIN_CURRENT=Off TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should generate a missing Ed25519 host key'
+  fi
+
+  assert_contains "$temp_dir/state/ssh-keygen.log" '-A' 'runs ssh-keygen -A when the Ed25519 host key is missing'
+  assert_contains "$host_key_file" 'host-private-key' 'creates the Ed25519 host private key'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-host-keys,' 'logs host key generation changes'
+}
+
+test_fails_clearly_when_ed25519_host_key_generation_does_not_produce_key() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  : > "$temp_dir/state/ssh-keygen.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+
+  if TEST_HOST_KEY_DIR="$temp_dir/state/etc/ssh" TEST_SSH_KEYGEN_CREATE_ED25519=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should fail if host key generation does not produce the Ed25519 host key'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Required SSH host key is missing after generation:' 'fails clearly when Ed25519 host key is still missing after generation'
+}
+
+test_removes_non_ed25519_host_keys_even_when_ssh_is_disabled() {
+  local temp_dir
+  local output_file
+  local log_file
+  local rsa_key_path
+  local ecdsa_key_path
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  rsa_key_path="$(host_key_path "$temp_dir" 'ssh_host_rsa_key')"
+  ecdsa_key_path="$(host_key_path "$temp_dir" 'ssh_host_ecdsa_key')"
+  mkdir -p "$temp_dir/state/etc/ssh"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  : > "$temp_dir/state/ssh-keygen.log"
+  printf 'ed-private\n' > "$(host_key_path "$temp_dir" 'ssh_host_ed25519_key')"
+  printf 'ed-public\n' > "$(host_key_path "$temp_dir" 'ssh_host_ed25519_key').pub"
+  printf 'rsa-private\n' > "$rsa_key_path"
+  printf 'rsa-public\n' > "$rsa_key_path.pub"
+  printf 'ecdsa-private\n' > "$ecdsa_key_path"
+  printf 'ecdsa-public\n' > "$ecdsa_key_path.pub"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+
+  if ! TEST_HOST_KEY_DIR="$temp_dir/state/etc/ssh" TEST_REMOTE_LOGIN_CURRENT=Off TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should prune non-Ed25519 host keys even when SSH login is disabled'
+  fi
+
+  [[ ! -e "$rsa_key_path" ]] || fail 'removes RSA host key when converging to Ed25519-only host keys'
+  [[ ! -e "$rsa_key_path.pub" ]] || fail 'removes RSA host public key when converging to Ed25519-only host keys'
+  [[ ! -e "$ecdsa_key_path" ]] || fail 'removes ECDSA host key when converging to Ed25519-only host keys'
+  [[ ! -e "$ecdsa_key_path.pub" ]] || fail 'removes ECDSA host public key when converging to Ed25519-only host keys'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-host-keys,' 'logs host key pruning changes'
 }
 
 test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius() {
@@ -869,9 +1010,9 @@ SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub maldoria-iparia-ezirius-
   assert_contains "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGqvd39EeXgfGhLRNoOXJYTkc0wbw825urpZKW+KiUR' 'deploys the second maldoria key with exact .pub filename'
   assert_contains "$temp_dir/state/sshd.log" '-t' 'validates sshd configuration before reload'
   assert_not_contains "$temp_dir/state/launchctl.log" 'kickstart -k system/com.openssh.sshd' 'does not reload sshd when Remote Login is being enabled from an off state'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-remote-login,' 'logs the Remote Login enablement change'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-config,' 'logs the sshd config change'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-authorized-key,' 'logs the authorized key deployment change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-remote-login,' 'logs the Remote Login enablement change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-config,' 'logs the sshd config change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-authorized-key,' 'logs the authorized key deployment change'
 }
 
 test_ssh_config_change_reloads_sshd_when_remote_login_is_already_enabled() {
@@ -1019,9 +1160,9 @@ test_ssh_disabled_removes_managed_files() {
   assert_contains "$temp_dir/state/systemsetup.log" '-setremotelogin off' 'disables Remote Login when SSH is disabled'
   [[ ! -e "$sshd_config_path" ]] || fail 'removes the managed sshd drop-in when SSH is disabled'
   [[ ! -e "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" ]] || fail 'removes the managed authorized key file when SSH is disabled'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-remote-login,' 'logs the Remote Login disablement change'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-config,' 'logs the sshd config removal'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-authorized-key,' 'logs the authorized key removal'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-remote-login,' 'logs the Remote Login disablement change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-config,' 'logs the sshd config removal'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-authorized-key,' 'logs the authorized key removal'
 }
 
 test_ssh_key_sync_does_not_reload_sshd_when_drop_in_is_unchanged() {
@@ -1052,7 +1193,8 @@ test_ssh_key_sync_does_not_reload_sshd_when_drop_in_is_unchanged() {
 SSHD_ALLOW_USERS="ezirius"
 SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
 
-  cat > "$sshd_config_path" <<'EOF'
+  cat > "$sshd_config_path" <<EOF
+HostKey $temp_dir/state/etc/ssh/ssh_host_ed25519_key
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 ChallengeResponseAuthentication no
@@ -1064,6 +1206,8 @@ AllowAgentForwarding no
 AllowUsers ezirius
 AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/*
 EOF
+  printf 'ed-private\n' > "$(host_key_path "$temp_dir" 'ssh_host_ed25519_key')"
+  printf 'ed-public\n' > "$(host_key_path "$temp_dir" 'ssh_host_ed25519_key').pub"
   printf 'stale-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
 
   if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
@@ -1097,6 +1241,9 @@ test_applies_non_portable_sleep_change_with_a_scope
 test_partial_override_files_inherit_required_values_from_baseline
 test_skips_dock_restart_when_dock_settings_are_already_correct
 test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbattery_token
+test_generates_missing_ed25519_host_key
+test_fails_clearly_when_ed25519_host_key_generation_does_not_produce_key
+test_removes_non_ed25519_host_keys_even_when_ssh_is_disabled
 test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius
 test_ssh_enabled_rejects_multiple_allowed_users_in_first_pass
 test_ssh_enabled_requires_sshd_login_key_files

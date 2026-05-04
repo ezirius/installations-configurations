@@ -114,6 +114,7 @@ load_shared_logging_config() {
     'ACTIVITY_LOG_CSV_HEADER' \
     'ACTION_INSTALLED' \
     'ACTION_UPDATED' \
+    'ACTION_CONFIGURED' \
     'ACTION_REMOVED'
   load_required_config "$root_path" 'configs/shared/shared/logging.conf'
   require_config_value 'ACTIVITY_LOG_TIMEZONE'
@@ -123,6 +124,7 @@ load_shared_logging_config() {
   require_config_value 'ACTIVITY_LOG_CSV_HEADER'
   require_config_value 'ACTION_INSTALLED'
   require_config_value 'ACTION_UPDATED'
+  require_config_value 'ACTION_CONFIGURED'
   require_config_value 'ACTION_REMOVED'
 }
 
