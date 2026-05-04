@@ -437,7 +437,7 @@ remove_managed_authorized_key_files() {
 }
 
 validate_sshd_configuration() {
-  sshd -t
+  sudo sshd -t
 }
 
 reload_sshd() {
