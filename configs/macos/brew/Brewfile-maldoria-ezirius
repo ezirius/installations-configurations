@@ -1,4 +1,4 @@
-# Shared macOS Brewfile for user 'ezirius'.
+# Host-specific macOS Brewfile for host 'maldoria' and user 'ezirius'.
 #
 # Folder contract:
 # - configs/<os>/<application>/
@@ -6,9 +6,10 @@
 #
 # Filename contract:
 # - Brewfile-<host>-<username>
-# - 'shared' in the host slot means all hosts for that OS scope
-# - this file is loaded before any matching host-specific Brewfile in the same
-#   application folder
+# - 'shared' is valid in both the host and username slots
+# - Brewfiles load from least specific to most specific:
+#   shared.shared, shared.x, x.shared, x.x
+# - shared OS scope loads before the concrete OS scope
 #
 # Content contract:
 # - use only 'brew "..."' and 'cask "..."' entries

@@ -6,6 +6,7 @@
 # - shared support for OS, host, and username slots
 # - Dock auto-hide and Spaces ordering application through defaults
 # - AC power sleep management through pmset and sudo
+# - hardened SSH server enablement, config, and key deployment
 # - help output and argument handling
 # - documentation headers for active system files
 #
@@ -64,6 +65,7 @@ make_fake_repo() {
     "$temp_dir/configs/shared/shared" \
     "$temp_dir/configs/shared/system" \
     "$temp_dir/configs/macos/system" \
+    "$temp_dir/keys/macos/ssh" \
     "$temp_dir/fake-bin" \
     "$temp_dir/libs/shared/shared"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/macos/system/system-configure"
@@ -184,6 +186,52 @@ fi
 
 exec "$@"'
 
+  write_command_stub "$fake_bin/systemsetup" '#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf "%s\n" "$*" >> "$STATE_DIR/systemsetup.log"
+
+case "$1" in
+  -getremotelogin)
+    printf "Remote Login: %s\n" "${TEST_REMOTE_LOGIN_CURRENT:-Off}"
+    ;;
+  -setremotelogin)
+    :
+    ;;
+  *)
+    exit 1
+    ;;
+esac'
+
+  write_command_stub "$fake_bin/sshd" '#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf "%s\n" "$*" >> "$STATE_DIR/sshd.log"
+
+if [[ "${TEST_SSHD_VALIDATE_FAIL:-0}" == "1" ]]; then
+  printf "%s\n" "sshd: configuration invalid" >&2
+  exit 1
+fi'
+
+  write_command_stub "$fake_bin/launchctl" '#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf "%s\n" "$*" >> "$STATE_DIR/launchctl.log"'
+
+  write_command_stub "$fake_bin/dscl" '#!/usr/bin/env bash
+set -euo pipefail
+
+user_record="$3"
+if [[ "$1" != "." || "$2" != "-read" || "$4" != "NFSHomeDirectory" ]]; then
+  exit 1
+fi
+
+user_name="${user_record##*/}"
+printf "NFSHomeDirectory: %s/%s\n" "${TEST_HOME_ROOT:?}" "$user_name"'
+
   write_command_stub "$fake_bin/killall" '#!/usr/bin/env bash
 set -euo pipefail
 
@@ -196,6 +244,7 @@ run_in_fake_repo() {
   local output_file="$2"
 
   TEST_STATE_DIR="$temp_dir/state" \
+  TEST_HOME_ROOT="$temp_dir/home" \
   PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$temp_dir/scripts/macos/system/system-configure" > "$output_file" 2>&1
 }
@@ -203,7 +252,7 @@ run_in_fake_repo() {
 write_shared_shared_config() {
   local temp_dir="$1"
 
-  cat > "$temp_dir/configs/shared/system/system-shared-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/shared/system/system-shared-shared.conf" <<EOF
 # Shared system settings for all OS scopes, hosts, and usernames.
 DOCK_AUTO_HIDE=true
 DOCK_REORDER_SPACES_BY_RECENT_USE=false
@@ -217,6 +266,23 @@ SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
 SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
 SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
 SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
+SSH_REMOTE_LOGIN_ENABLED=false
+SSHD_ALLOW_USERS=""
+SSHD_LOGIN_KEY_FILES=""
+SSHD_PASSWORD_AUTHENTICATION=false
+SSHD_KBD_INTERACTIVE_AUTHENTICATION=false
+SSHD_CHALLENGE_RESPONSE_AUTHENTICATION=false
+SSHD_PERMIT_ROOT_LOGIN=false
+SSHD_PUBKEY_AUTHENTICATION=true
+SSHD_X11_FORWARDING=false
+SSHD_ALLOW_TCP_FORWARDING=false
+SSHD_ALLOW_AGENT_FORWARDING=false
+SYSTEM_REMOTE_LOGIN_LOG_TOKEN="system-remote-login"
+SYSTEM_SSHD_CONFIG_LOG_TOKEN="system-sshd-config"
+SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN="system-sshd-authorized-key"
+SYSTEM_SSHD_CONFIG_DIR="$temp_dir/state/etc/ssh/sshd_config.d"
+SYSTEM_SSHD_MANAGED_FILE_NAME="90-installations-and-configurations.conf"
+SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME="authorized_keys.d"
 EOF
 }
 
@@ -264,6 +330,26 @@ write_macos_host_user_override() {
 # macOS system overrides for host '$host_name' and user '$user_name'.
 $body
 EOF
+}
+
+write_repo_ssh_key() {
+  local temp_dir="$1"
+  local file_name="$2"
+  local public_key="$3"
+
+  cat > "$temp_dir/keys/macos/ssh/$file_name" <<EOF
+$public_key
+EOF
+}
+
+managed_sshd_config_path() {
+  local temp_dir="$1"
+  printf '%s\n' "$temp_dir/state/etc/ssh/sshd_config.d/90-installations-and-configurations.conf"
+}
+
+managed_authorized_keys_dir() {
+  local temp_dir="$1"
+  printf '%s\n' "$temp_dir/home/ezirius/.ssh/authorized_keys.d"
 }
 
 test_help_output() {
@@ -669,6 +755,325 @@ test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbatter
   assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs the portable sleep change'
 }
 
+test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="otheruser"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should require SSHD_ALLOW_USERS to equal ezirius when SSH is enabled'
+  fi
+
+  assert_contains "$output_file" 'ERROR: SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH does not equal ezirius'
+}
+
+test_ssh_enabled_rejects_multiple_allowed_users_in_first_pass() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius otheruser"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should reject multiple allowed users in the first SSH management pass'
+  fi
+
+  assert_contains "$output_file" 'ERROR: SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH allows more than ezirius in the first pass'
+}
+
+test_ssh_enabled_requires_sshd_login_key_files() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius"'
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should require SSHD_LOGIN_KEY_FILES when SSH is enabled'
+  fi
+
+  assert_contains "$output_file" 'ERROR: SSHD_LOGIN_KEY_FILES must be set when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH has no configured key files'
+}
+
+test_ssh_enabled_deploys_maldoria_keys_with_exact_pub_filenames() {
+  local temp_dir
+  local output_file
+  local log_file
+  local sshd_config_path
+  local authorized_keys_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
+  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_repo_ssh_key "$temp_dir" 'maldoria-iparia-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGqvd39EeXgfGhLRNoOXJYTkc0wbw825urpZKW+KiUR'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub maldoria-iparia-ezirius-login.pub"'
+
+  if ! TEST_REMOTE_LOGIN_CURRENT=Off TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should enable SSH and deploy configured maldoria keys'
+  fi
+
+  assert_contains "$temp_dir/state/systemsetup.log" '-setremotelogin on' 'enables Remote Login when SSH is enabled'
+  assert_contains "$sshd_config_path" 'AllowUsers ezirius' 'renders AllowUsers for ezirius'
+  assert_contains "$sshd_config_path" 'AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/*' 'renders authorized keys directory support'
+  assert_contains "$sshd_config_path" 'PasswordAuthentication no' 'renders hardened password authentication setting'
+  assert_contains "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'deploys the first maldoria key with exact .pub filename'
+  assert_contains "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGqvd39EeXgfGhLRNoOXJYTkc0wbw825urpZKW+KiUR' 'deploys the second maldoria key with exact .pub filename'
+  assert_contains "$temp_dir/state/sshd.log" '-t' 'validates sshd configuration before reload'
+  assert_not_contains "$temp_dir/state/launchctl.log" 'kickstart -k system/com.openssh.sshd' 'does not reload sshd when Remote Login is being enabled from an off state'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-remote-login,' 'logs the Remote Login enablement change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-config,' 'logs the sshd config change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-authorized-key,' 'logs the authorized key deployment change'
+}
+
+test_ssh_config_change_reloads_sshd_when_remote_login_is_already_enabled() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
+
+  if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should reload sshd when the managed SSH config changes while Remote Login is already enabled'
+  fi
+
+  assert_contains "$temp_dir/state/sshd.log" '-t' 'validates sshd configuration before reload when Remote Login is already enabled'
+  assert_contains "$temp_dir/state/launchctl.log" 'kickstart -k system/com.openssh.sshd' 'reloads sshd when the managed config changes and Remote Login is already enabled'
+}
+
+test_ssh_enabled_deploys_maravyn_keys_with_exact_pub_filenames() {
+  local temp_dir
+  local output_file
+  local authorized_keys_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maravyn-maldoria-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICSqWNpR0r6JR8U0WpEukrkXvnax3sECll3PtKDviLGf'
+  write_repo_ssh_key "$temp_dir" 'maravyn-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIESP2Js7TQIZ6RAeLFHJrF5dYJ4id/Crey/FkDmx991c'
+  write_repo_ssh_key "$temp_dir" 'maravyn-iparia-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO/0nCy2P4evAkplHUCmuzyCu94LvjqDCyxU2K5p1ONu'
+  write_macos_host_user_override "$temp_dir" 'maravyn' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius"
+SSHD_LOGIN_KEY_FILES="maravyn-maldoria-ezirius-login.pub maravyn-ipirus-ezirius-login.pub maravyn-iparia-ezirius-login.pub"'
+
+  if ! TEST_HOSTNAME=maravyn.local TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should deploy the configured maravyn keys'
+  fi
+
+  assert_contains "$authorized_keys_dir/maravyn-maldoria-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICSqWNpR0r6JR8U0WpEukrkXvnax3sECll3PtKDviLGf' 'deploys the first maravyn key with exact .pub filename'
+  assert_contains "$authorized_keys_dir/maravyn-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIESP2Js7TQIZ6RAeLFHJrF5dYJ4id/Crey/FkDmx991c' 'deploys the second maravyn key with exact .pub filename'
+  assert_contains "$authorized_keys_dir/maravyn-iparia-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO/0nCy2P4evAkplHUCmuzyCu94LvjqDCyxU2K5p1ONu' 'deploys the third maravyn key with exact .pub filename'
+}
+
+test_ssh_key_sync_removes_stale_managed_keys_not_in_current_config() {
+  local temp_dir
+  local output_file
+  local authorized_keys_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  mkdir -p "$temp_dir/state" "$authorized_keys_dir"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  printf 'old-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
+  printf 'stale-key\n' > "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
+
+  if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should remove stale managed SSH keys that are no longer configured'
+  fi
+
+  assert_contains "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'keeps currently configured managed key'
+  [[ ! -e "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub" ]] || fail 'removes stale managed key not present in current SSHD_LOGIN_KEY_FILES'
+}
+
+test_ssh_disabled_removes_managed_files() {
+  local temp_dir
+  local output_file
+  local sshd_config_path
+  local authorized_keys_dir
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
+  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state" "$authorized_keys_dir" "$(dirname "$sshd_config_path")"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  printf 'old-config\n' > "$sshd_config_path"
+  printf 'old-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+
+  if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should disable SSH and remove managed SSH files when SSH is disabled'
+  fi
+
+  assert_contains "$temp_dir/state/systemsetup.log" '-setremotelogin off' 'disables Remote Login when SSH is disabled'
+  [[ ! -e "$sshd_config_path" ]] || fail 'removes the managed sshd drop-in when SSH is disabled'
+  [[ ! -e "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" ]] || fail 'removes the managed authorized key file when SSH is disabled'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-remote-login,' 'logs the Remote Login disablement change'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-config,' 'logs the sshd config removal'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-sshd-authorized-key,' 'logs the authorized key removal'
+}
+
+test_ssh_key_sync_does_not_reload_sshd_when_drop_in_is_unchanged() {
+  local temp_dir
+  local output_file
+  local sshd_config_path
+  local authorized_keys_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
+  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  mkdir -p "$temp_dir/state" "$authorized_keys_dir" "$(dirname "$sshd_config_path")"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="ezirius"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
+
+  cat > "$sshd_config_path" <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+X11Forwarding no
+AllowTcpForwarding no
+AllowAgentForwarding no
+AllowUsers ezirius
+AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/*
+EOF
+  printf 'stale-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
+
+  if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should update SSH keys without reloading sshd when the drop-in is unchanged'
+  fi
+
+  assert_not_contains "$temp_dir/state/launchctl.log" 'kickstart -k system/com.openssh.sshd' 'does not reload sshd when only managed key content changes'
+}
+
 test_documentation_headers() {
   assert_starts_with_comment "$ROOT/configs/shared/system/system-shared-shared.conf" 'shared shared system config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/system/system-maldoria-shared.conf" 'shared host system config should start with a header comment'
@@ -692,6 +1097,15 @@ test_applies_non_portable_sleep_change_with_a_scope
 test_partial_override_files_inherit_required_values_from_baseline
 test_skips_dock_restart_when_dock_settings_are_already_correct
 test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbattery_token
+test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius
+test_ssh_enabled_rejects_multiple_allowed_users_in_first_pass
+test_ssh_enabled_requires_sshd_login_key_files
+test_ssh_enabled_deploys_maldoria_keys_with_exact_pub_filenames
+test_ssh_enabled_deploys_maravyn_keys_with_exact_pub_filenames
+test_ssh_config_change_reloads_sshd_when_remote_login_is_already_enabled
+test_ssh_key_sync_removes_stale_managed_keys_not_in_current_config
+test_ssh_disabled_removes_managed_files
+test_ssh_key_sync_does_not_reload_sshd_when_drop_in_is_unchanged
 test_documentation_headers
 
 printf 'PASS: tests/shared/system/test-system-configure.sh\n'

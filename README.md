@@ -29,6 +29,13 @@ The current active implementation surface is:
 - `configs/shared/system/system-shared-shared.conf`
 - `configs/shared/system/system-maldoria-shared.conf`
 - `configs/shared/system/system-maravyn-shared.conf`
+- `configs/macos/system/system-maldoria-ezirius.conf`
+- `configs/macos/system/system-maravyn-ezirius.conf`
+- `keys/macos/ssh/maldoria-ipirus-ezirius-login.pub`
+- `keys/macos/ssh/maldoria-iparia-ezirius-login.pub`
+- `keys/macos/ssh/maravyn-maldoria-ezirius-login.pub`
+- `keys/macos/ssh/maravyn-ipirus-ezirius-login.pub`
+- `keys/macos/ssh/maravyn-iparia-ezirius-login.pub`
 - `libs/shared/shared/common.sh`
 - `scripts/shared/brew/brew-install`
 - `scripts/macos/downloads/macos-download`
@@ -366,7 +373,8 @@ Behaviour:
 ## `scripts/macos/system/system-configure`
 
 This script applies the managed macOS system settings from layered files under
-`configs/shared/system/` and `configs/macos/system/`.
+`configs/shared/system/` and `configs/macos/system/`, including hardened SSH
+server management through layered host and user overrides.
 
 Behaviour:
 
@@ -385,13 +393,26 @@ Behaviour:
 5. Restart the Dock only when Dock settings changed.
 6. Apply AC power sleep with `pmset` only when the managed value differs.
 7. Use `pmset -c` on portable Macs and `pmset -a` on non-portable Macs.
-8. Validate the final merged config after all matching layers load.
-9. Append one `Updated` CSV row for each managed setting that actually changes.
+8. Enable or disable macOS Remote Login based on the merged SSH config.
+9. Manage a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled.
+10. Deploy the configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames.
+11. Revoke configured managed keys when they are removed from the current SSH config.
+12. Validate `sshd` config before reloading when the managed SSH config changes.
+13. Validate the final merged config after all matching layers load.
+14. Append one `Updated` CSV row for each managed setting that actually changes.
+
+In the current first SSH management pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
+Other or multiple SSH allow-user values are currently unsupported.
+
+The system workflow treats `~/.ssh/authorized_keys.d/` as the repo-managed SSH key directory.
+Configured `.pub` files are deployed there using their exact filenames.
+Managed `.pub` files in that directory that are not present in the current `SSHD_LOGIN_KEY_FILES` value are removed.
 
 The current managed macOS system settings are:
 
 - Dock auto-hide
 - Spaces reordering by recent use
 - AC power system sleep minutes
+- hardened Remote Login and SSH server access
 
 Managed setting log tokens also come from the system config file.

@@ -34,6 +34,13 @@ The active implementation surface is:
 - `configs/shared/system/system-shared-shared.conf`
 - `configs/shared/system/system-maldoria-shared.conf`
 - `configs/shared/system/system-maravyn-shared.conf`
+- `configs/macos/system/system-maldoria-ezirius.conf`
+- `configs/macos/system/system-maravyn-ezirius.conf`
+- `keys/macos/ssh/maldoria-ipirus-ezirius-login.pub`
+- `keys/macos/ssh/maldoria-iparia-ezirius-login.pub`
+- `keys/macos/ssh/maravyn-maldoria-ezirius-login.pub`
+- `keys/macos/ssh/maravyn-ipirus-ezirius-login.pub`
+- `keys/macos/ssh/maravyn-iparia-ezirius-login.pub`
 - `libs/shared/shared/common.sh`
 - `scripts/shared/brew/brew-install`
 - `scripts/macos/downloads/macos-download`
@@ -468,5 +475,17 @@ Important current limitation:
 6. restarts the Dock only when Dock settings changed
 7. applies AC power sleep with `pmset` only when needed
 8. uses `pmset -c` on portable Macs and `pmset -a` on non-portable Macs
-9. validates the final merged config after all matching layers load
-10. logs each managed setting change to the shared per-host CSV activity log
+9. enables or disables macOS Remote Login based on the merged SSH config
+10. manages a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled
+11. deploys configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames
+12. revokes configured managed keys when they are removed from the current SSH config
+13. validates `sshd` config before reloading when the managed SSH config changes
+14. validates the final merged config after all matching layers load
+15. logs each managed setting change to the shared per-host CSV activity log
+
+When SSH is enabled in the current first pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
+Other or multiple SSH allow-user values are currently unsupported.
+
+The system workflow treats `~/.ssh/authorized_keys.d/` as the repo-managed SSH key directory.
+Configured `.pub` files are deployed there using their exact filenames.
+Managed `.pub` files in that directory that are not present in the current `SSHD_LOGIN_KEY_FILES` value are removed.

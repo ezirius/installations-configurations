@@ -14,7 +14,7 @@
 # Matching files are loaded from least specific to most specific.
 #
 # The current managed settings are Dock auto-hide, Spaces ordering by recent
-# use, and AC power system sleep minutes.
+# use, AC power system sleep minutes, and hardened macOS SSH server access.
 
 set -euo pipefail
 
@@ -41,6 +41,21 @@ require_command() {
   local command_name="$1"
 
   command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
+}
+
+contains_distinct_word() {
+  local haystack="$1"
+  local needle="$2"
+
+  case " $haystack " in
+    *" $needle "*) return 0 ;;
+  esac
+
+  return 1
+}
+
+contains_pub_file_name() {
+  [[ "$1" == *.pub ]]
 }
 
 SYSTEM_CONFIGS=()
@@ -89,7 +104,24 @@ load_system_configs() {
     'SYSTEM_PMSET_AC_POWER_SECTION' \
     'SYSTEM_PMSET_SLEEP_LOG_TOKEN' \
     'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' \
-    'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE'
+    'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' \
+    'SSH_REMOTE_LOGIN_ENABLED' \
+    'SSHD_ALLOW_USERS' \
+    'SSHD_LOGIN_KEY_FILES' \
+    'SSHD_PASSWORD_AUTHENTICATION' \
+    'SSHD_KBD_INTERACTIVE_AUTHENTICATION' \
+    'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION' \
+    'SSHD_PERMIT_ROOT_LOGIN' \
+    'SSHD_PUBKEY_AUTHENTICATION' \
+    'SSHD_X11_FORWARDING' \
+    'SSHD_ALLOW_TCP_FORWARDING' \
+    'SSHD_ALLOW_AGENT_FORWARDING' \
+    'SYSTEM_REMOTE_LOGIN_LOG_TOKEN' \
+    'SYSTEM_SSHD_CONFIG_LOG_TOKEN' \
+    'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN' \
+    'SYSTEM_SSHD_CONFIG_DIR' \
+    'SYSTEM_SSHD_MANAGED_FILE_NAME' \
+    'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME'
 
   for config_path in "${SYSTEM_CONFIGS[@]}"; do
     # shellcheck disable=SC1090
@@ -102,6 +134,14 @@ bool_to_defaults_value() {
   case "$1" in
     true) printf 'true\n' ;;
     false) printf 'false\n' ;;
+    *) fail "Invalid boolean value: $1" ;;
+  esac
+}
+
+bool_to_sshd_yes_no() {
+  case "$1" in
+    true) printf 'yes\n' ;;
+    false) printf 'no\n' ;;
     *) fail "Invalid boolean value: $1" ;;
   esac
 }
@@ -137,6 +177,278 @@ validate_pmset_scope_value() {
     -a|-c) ;;
     *) fail "Invalid $1 value: $2" ;;
   esac
+}
+
+validate_safe_file_name() {
+  local variable_name="$1"
+  local file_name="$2"
+
+  [[ -n "$file_name" ]] || fail "$variable_name must not be empty"
+  [[ "$file_name" != */* ]] || fail "$variable_name must not contain /: $file_name"
+  [[ "$file_name" != *$'\n'* ]] || fail "$variable_name must not contain newlines: $file_name"
+}
+
+repo_ssh_keys_dir_path() {
+  local root_path="$1"
+  printf '%s/keys/macos/ssh\n' "$root_path"
+}
+
+managed_sshd_config_path() {
+  printf '%s/%s\n' "$SYSTEM_SSHD_CONFIG_DIR" "$SYSTEM_SSHD_MANAGED_FILE_NAME"
+}
+
+authorized_keys_dir_path_for_home() {
+  local user_home="$1"
+  printf '%s/.ssh/%s\n' "$user_home" "$SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME"
+}
+
+user_home_directory() {
+  local user_name="$1"
+  local dscl_output
+  local home_path
+
+  dscl_output="$(dscl . -read "/Users/$user_name" NFSHomeDirectory 2>/dev/null || true)"
+  home_path="${dscl_output#NFSHomeDirectory: }"
+  [[ -n "$home_path" && "$home_path" != "$dscl_output" ]] || fail "Unable to resolve home directory for user: $user_name"
+  printf '%s\n' "$home_path"
+}
+
+current_remote_login_enabled() {
+  local status_output
+
+  status_output="$(systemsetup -getremotelogin 2>/dev/null || true)"
+  [[ "$status_output" == *'On'* ]]
+}
+
+render_sshd_managed_config() {
+  local password_authentication
+  local kbd_interactive_authentication
+  local challenge_response_authentication
+  local permit_root_login
+  local pubkey_authentication
+  local x11_forwarding
+  local allow_tcp_forwarding
+  local allow_agent_forwarding
+
+  password_authentication="$(bool_to_sshd_yes_no "$SSHD_PASSWORD_AUTHENTICATION")"
+  kbd_interactive_authentication="$(bool_to_sshd_yes_no "$SSHD_KBD_INTERACTIVE_AUTHENTICATION")"
+  challenge_response_authentication="$(bool_to_sshd_yes_no "$SSHD_CHALLENGE_RESPONSE_AUTHENTICATION")"
+  permit_root_login="$(bool_to_sshd_yes_no "$SSHD_PERMIT_ROOT_LOGIN")"
+  pubkey_authentication="$(bool_to_sshd_yes_no "$SSHD_PUBKEY_AUTHENTICATION")"
+  x11_forwarding="$(bool_to_sshd_yes_no "$SSHD_X11_FORWARDING")"
+  allow_tcp_forwarding="$(bool_to_sshd_yes_no "$SSHD_ALLOW_TCP_FORWARDING")"
+  allow_agent_forwarding="$(bool_to_sshd_yes_no "$SSHD_ALLOW_AGENT_FORWARDING")"
+
+  cat <<EOF
+PasswordAuthentication $password_authentication
+KbdInteractiveAuthentication $kbd_interactive_authentication
+ChallengeResponseAuthentication $challenge_response_authentication
+PermitRootLogin $permit_root_login
+PubkeyAuthentication $pubkey_authentication
+X11Forwarding $x11_forwarding
+AllowTcpForwarding $allow_tcp_forwarding
+AllowAgentForwarding $allow_agent_forwarding
+AllowUsers $SSHD_ALLOW_USERS
+AuthorizedKeysFile .ssh/authorized_keys .ssh/$SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME/*
+EOF
+}
+
+write_root_owned_file_if_changed() {
+  local target_file_path="$1"
+  local file_content="$2"
+  local target_dir
+  local temp_file
+
+  target_dir="$(command dirname "$target_file_path")"
+  temp_file="$(mktemp)"
+  printf '%s\n' "$file_content" > "$temp_file"
+
+  if [[ -f "$target_file_path" ]] && cmp -s "$temp_file" "$target_file_path"; then
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  sudo mkdir -p "$target_dir"
+  sudo cp "$temp_file" "$target_file_path"
+  sudo chmod 644 "$target_file_path"
+  rm -f "$temp_file"
+  return 0
+}
+
+remove_root_owned_file_if_present() {
+  local target_file_path="$1"
+
+  [[ -e "$target_file_path" ]] || return 1
+  sudo rm -f "$target_file_path"
+  return 0
+}
+
+write_user_owned_file_if_changed() {
+  local target_file_path="$1"
+  local file_content="$2"
+  local target_dir
+  local temp_file
+
+  target_dir="$(command dirname "$target_file_path")"
+  temp_file="$(mktemp)"
+  printf '%s\n' "$file_content" > "$temp_file"
+
+  if [[ -f "$target_file_path" ]] && cmp -s "$temp_file" "$target_file_path"; then
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  command mkdir -p "$target_dir"
+  command cp "$temp_file" "$target_file_path"
+  command chmod 600 "$target_file_path"
+  rm -f "$temp_file"
+  return 0
+}
+
+remove_user_owned_file_if_present() {
+  local target_file_path="$1"
+
+  [[ -e "$target_file_path" ]] || return 1
+  command rm -f "$target_file_path"
+  return 0
+}
+
+sync_managed_authorized_key_files() {
+  local root_path="$1"
+  local user_home="$2"
+  local repo_key_dir
+  local authorized_keys_dir
+  local key_file_name
+  local repo_key_path
+  local managed_key_path
+  local key_content
+  local deployed_key_candidate
+  local deployed_key_name
+  local keys_changed='1'
+
+  repo_key_dir="$(repo_ssh_keys_dir_path "$root_path")"
+  authorized_keys_dir="$(authorized_keys_dir_path_for_home "$user_home")"
+
+  command mkdir -p "$user_home/.ssh" "$authorized_keys_dir"
+  command chmod 700 "$user_home/.ssh" "$authorized_keys_dir"
+
+  for key_file_name in $SSHD_LOGIN_KEY_FILES; do
+    validate_safe_file_name 'SSHD_LOGIN_KEY_FILES entry' "$key_file_name"
+    repo_key_path="$repo_key_dir/$key_file_name"
+    [[ -f "$repo_key_path" ]] || fail "SSH login key file not found: $repo_key_path"
+    key_content="$(<"$repo_key_path")"
+    [[ -n "$key_content" && "$key_content" != *$'\n'* ]] || fail "SSH login key file must contain one key line: $repo_key_path"
+    managed_key_path="$authorized_keys_dir/$key_file_name"
+    if write_user_owned_file_if_changed "$managed_key_path" "$key_content"; then
+      keys_changed='0'
+    fi
+  done
+
+  for deployed_key_candidate in "$authorized_keys_dir"/*.pub; do
+    [[ -e "$deployed_key_candidate" ]] || continue
+    deployed_key_name="$(basename "$deployed_key_candidate")"
+    if ! contains_pub_file_name "$deployed_key_name"; then
+      continue
+    fi
+
+    if contains_distinct_word "$SSHD_LOGIN_KEY_FILES" "$deployed_key_name"; then
+      continue
+    fi
+
+    if remove_user_owned_file_if_present "$authorized_keys_dir/$deployed_key_name"; then
+      keys_changed='0'
+    fi
+  done
+
+  [[ "$keys_changed" == '0' ]]
+}
+
+remove_managed_authorized_key_files() {
+  local root_path="$1"
+  local user_home="$2"
+  local authorized_keys_dir
+  local deployed_key_candidate
+  local deployed_key_name
+  local keys_changed='1'
+
+  authorized_keys_dir="$(authorized_keys_dir_path_for_home "$user_home")"
+
+  [[ -d "$authorized_keys_dir" ]] || return 1
+
+  for deployed_key_candidate in "$authorized_keys_dir"/*.pub; do
+    [[ -e "$deployed_key_candidate" ]] || continue
+    deployed_key_name="$(basename "$deployed_key_candidate")"
+    if ! contains_pub_file_name "$deployed_key_name"; then
+      continue
+    fi
+
+    if remove_user_owned_file_if_present "$authorized_keys_dir/$deployed_key_name"; then
+      keys_changed='0'
+    fi
+  done
+
+  [[ "$keys_changed" == '0' ]]
+}
+
+validate_sshd_configuration() {
+  sshd -t
+}
+
+reload_sshd() {
+  sudo launchctl kickstart -k system/com.openssh.sshd
+}
+
+apply_ssh_settings() {
+  local root_path="$1"
+  local user_home
+  local sshd_config_path
+  local sshd_config_changed='1'
+  local authorized_keys_changed='1'
+
+  user_home="$(user_home_directory 'ezirius')"
+  sshd_config_path="$(managed_sshd_config_path)"
+
+  if [[ "$SSH_REMOTE_LOGIN_ENABLED" == 'false' ]]; then
+    if current_remote_login_enabled; then
+      sudo systemsetup -setremotelogin off
+      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_REMOTE_LOGIN_LOG_TOKEN" ''
+    fi
+
+    if remove_root_owned_file_if_present "$sshd_config_path"; then
+      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
+    fi
+
+    if remove_managed_authorized_key_files "$root_path" "$user_home"; then
+      append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
+    fi
+
+    return 0
+  fi
+
+  if sync_managed_authorized_key_files "$root_path" "$user_home"; then
+    authorized_keys_changed='0'
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
+  fi
+
+  if write_root_owned_file_if_changed "$sshd_config_path" "$(render_sshd_managed_config)"; then
+    sshd_config_changed='0'
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
+  fi
+
+  if [[ "$sshd_config_changed" == '0' ]] || ! current_remote_login_enabled; then
+    validate_sshd_configuration
+  fi
+
+  if current_remote_login_enabled; then
+    if [[ "$sshd_config_changed" == '0' ]]; then
+      reload_sshd
+    fi
+  else
+    sudo systemsetup -setremotelogin on
+    append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_UPDATED" "$SYSTEM_REMOTE_LOGIN_LOG_TOKEN" ''
+  fi
+
+  [[ "$authorized_keys_changed" == '0' ]] && :
 }
 
 # Update one Dock boolean key only when the current value differs.
@@ -225,12 +537,46 @@ validate_config() {
   [[ -n "${SYSTEM_PMSET_SLEEP_LOG_TOKEN:-}" ]] || fail 'SYSTEM_PMSET_SLEEP_LOG_TOKEN is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
   [[ -n "${SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
+  [[ -n "${SSH_REMOTE_LOGIN_ENABLED:-}" ]] || fail 'SSH_REMOTE_LOGIN_ENABLED is not set in the managed macOS system config'
+  [[ -n "${SSHD_PASSWORD_AUTHENTICATION:-}" ]] || fail 'SSHD_PASSWORD_AUTHENTICATION is not set in the managed macOS system config'
+  [[ -n "${SSHD_KBD_INTERACTIVE_AUTHENTICATION:-}" ]] || fail 'SSHD_KBD_INTERACTIVE_AUTHENTICATION is not set in the managed macOS system config'
+  [[ -n "${SSHD_CHALLENGE_RESPONSE_AUTHENTICATION:-}" ]] || fail 'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION is not set in the managed macOS system config'
+  [[ -n "${SSHD_PERMIT_ROOT_LOGIN:-}" ]] || fail 'SSHD_PERMIT_ROOT_LOGIN is not set in the managed macOS system config'
+  [[ -n "${SSHD_PUBKEY_AUTHENTICATION:-}" ]] || fail 'SSHD_PUBKEY_AUTHENTICATION is not set in the managed macOS system config'
+  [[ -n "${SSHD_X11_FORWARDING:-}" ]] || fail 'SSHD_X11_FORWARDING is not set in the managed macOS system config'
+  [[ -n "${SSHD_ALLOW_TCP_FORWARDING:-}" ]] || fail 'SSHD_ALLOW_TCP_FORWARDING is not set in the managed macOS system config'
+  [[ -n "${SSHD_ALLOW_AGENT_FORWARDING:-}" ]] || fail 'SSHD_ALLOW_AGENT_FORWARDING is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_REMOTE_LOGIN_LOG_TOKEN:-}" ]] || fail 'SYSTEM_REMOTE_LOGIN_LOG_TOKEN is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_CONFIG_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_CONFIG_LOG_TOKEN is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_CONFIG_DIR:-}" ]] || fail 'SYSTEM_SSHD_CONFIG_DIR is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_MANAGED_FILE_NAME:-}" ]] || fail 'SYSTEM_SSHD_MANAGED_FILE_NAME is not set in the managed macOS system config'
+  [[ -n "${SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME:-}" ]] || fail 'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME is not set in the managed macOS system config'
 
   validate_repo_bool_value 'DOCK_AUTO_HIDE' "$DOCK_AUTO_HIDE"
   validate_repo_bool_value 'DOCK_REORDER_SPACES_BY_RECENT_USE' "$DOCK_REORDER_SPACES_BY_RECENT_USE"
   validate_non_negative_integer 'AC_POWER_SYSTEM_SLEEP_MINUTES' "$AC_POWER_SYSTEM_SLEEP_MINUTES"
   validate_pmset_scope_value 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' "$SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE"
   validate_pmset_scope_value 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' "$SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE"
+  validate_repo_bool_value 'SSH_REMOTE_LOGIN_ENABLED' "$SSH_REMOTE_LOGIN_ENABLED"
+  validate_repo_bool_value 'SSHD_PASSWORD_AUTHENTICATION' "$SSHD_PASSWORD_AUTHENTICATION"
+  validate_repo_bool_value 'SSHD_KBD_INTERACTIVE_AUTHENTICATION' "$SSHD_KBD_INTERACTIVE_AUTHENTICATION"
+  validate_repo_bool_value 'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION' "$SSHD_CHALLENGE_RESPONSE_AUTHENTICATION"
+  validate_repo_bool_value 'SSHD_PERMIT_ROOT_LOGIN' "$SSHD_PERMIT_ROOT_LOGIN"
+  validate_repo_bool_value 'SSHD_PUBKEY_AUTHENTICATION' "$SSHD_PUBKEY_AUTHENTICATION"
+  validate_repo_bool_value 'SSHD_X11_FORWARDING' "$SSHD_X11_FORWARDING"
+  validate_repo_bool_value 'SSHD_ALLOW_TCP_FORWARDING' "$SSHD_ALLOW_TCP_FORWARDING"
+  validate_repo_bool_value 'SSHD_ALLOW_AGENT_FORWARDING' "$SSHD_ALLOW_AGENT_FORWARDING"
+
+  if [[ "$SSH_REMOTE_LOGIN_ENABLED" == 'true' ]]; then
+    [[ -n "${SSHD_ALLOW_USERS:-}" ]] || fail 'SSHD_ALLOW_USERS must be set when SSH_REMOTE_LOGIN_ENABLED is true'
+    [[ "$SSHD_ALLOW_USERS" == 'ezirius' ]] || fail 'SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true'
+    [[ -n "${SSHD_LOGIN_KEY_FILES:-}" ]] || fail 'SSHD_LOGIN_KEY_FILES must be set when SSH_REMOTE_LOGIN_ENABLED is true'
+    for key_file_name in $SSHD_LOGIN_KEY_FILES; do
+      validate_safe_file_name 'SSHD_LOGIN_KEY_FILES entry' "$key_file_name"
+      [[ -f "$(repo_ssh_keys_dir_path "$ROOT_PATH")/$key_file_name" ]] || fail "SSH login key file not found: $(repo_ssh_keys_dir_path "$ROOT_PATH")/$key_file_name"
+    done
+  fi
 }
 
 main() {
@@ -253,8 +599,14 @@ main() {
   require_command sudo
   require_command awk
   require_command killall
+  require_command systemsetup
+  require_command sshd
+  require_command launchctl
+  require_command dscl
+  require_command cmp
 
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
+  ROOT_PATH="$root_path"
   load_shared_logging_config "$root_path"
   os_name="$(detect_os)"
   host_name="$(detect_host)"
@@ -277,6 +629,9 @@ main() {
 
   print_green 'Applying power settings'
   apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+
+  print_green 'Applying SSH settings'
+  apply_ssh_settings "$root_path"
 
   print_green 'macOS system settings are ready'
 }
