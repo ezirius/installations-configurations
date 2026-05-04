@@ -99,7 +99,7 @@ main() {
     'MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX' \
     'MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX' \
     'MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE'
-  load_required_config "$root_path" 'configs/macos/downloads/macos-download-shared.conf'
+  load_required_config "$root_path" 'configs/macos/downloads/macos-download.conf'
   require_config_value 'MACOS_DOWNLOAD_CATALOG_URL'
   require_config_value 'MACOS_DOWNLOAD_DIR_RELATIVE'
   require_config_value 'MACOS_DOWNLOAD_ARM_SECTION_LABEL'

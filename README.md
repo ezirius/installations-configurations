@@ -15,18 +15,20 @@ The current active workflows are:
 - Public repo bootstrap install into a fixed per-user path
 - Homebrew installation through layered Brewfiles
 - Apple Mac restore images and full installer downloads from Apple's official sources
-- macOS system configuration with host-specific override and shared fallback settings files
+- macOS system configuration through layered shared, host, and user settings files
 
 ## Active Files
 
 The current active implementation surface is:
 
 - `install`
-- `configs/shared/shared/logging-shared.conf`
-- `configs/shared/brew/brew-install-shared.conf`
+- `configs/shared/shared/logging.conf`
+- `configs/shared/brew/brew-install.conf`
 - `configs/macos/brew/Brewfile-shared-ezirius`
-- `configs/macos/downloads/macos-download-shared.conf`
-- `configs/macos/system/system-settings-shared.conf`
+- `configs/macos/downloads/macos-download.conf`
+- `configs/shared/system/system-shared-shared.conf`
+- `configs/shared/system/system-maldoria-shared.conf`
+- `configs/shared/system/system-maravyn-shared.conf`
 - `libs/shared/shared/common.sh`
 - `scripts/shared/brew/brew-install`
 - `scripts/macos/downloads/macos-download`
@@ -94,7 +96,7 @@ Brewfile-<host>-<username>
 Where:
 
 - `<host>` is either `shared` or the current hostname normalised to lowercase up to the first `.`
-- `<username>` is `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`
+- `<username>` is either `shared` or `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`
 - leading and trailing `-` characters are trimmed
 - repeated `-` characters are collapsed
 
@@ -115,12 +117,35 @@ Examples:
 
 It then loads every matching Brewfile in this order:
 
-1. `configs/shared/brew/Brewfile-shared-<username>`
-2. `configs/shared/brew/Brewfile-<host>-<username>`
-3. `configs/<os>/brew/Brewfile-shared-<username>`
-4. `configs/<os>/brew/Brewfile-<host>-<username>`
+1. `configs/shared/brew/Brewfile-shared-shared`
+2. `configs/shared/brew/Brewfile-shared-<username>`
+3. `configs/shared/brew/Brewfile-<host>-shared`
+4. `configs/shared/brew/Brewfile-<host>-<username>`
+5. `configs/<os>/brew/Brewfile-shared-shared`
+6. `configs/<os>/brew/Brewfile-shared-<username>`
+7. `configs/<os>/brew/Brewfile-<host>-shared`
+8. `configs/<os>/brew/Brewfile-<host>-<username>`
 
-Shared files provide the baseline. Host-specific files add to that baseline.
+## System Config Resolution
+
+System config files use this filename pattern:
+
+```text
+system-<host>-<username>.conf
+```
+
+For system config, `shared` is valid in the OS, host, and username slots.
+
+Matching files load from least specific to most specific in this order within
+each OS scope:
+
+1. `shared.shared`
+2. `shared.x`
+3. `x.shared`
+4. `x.x`
+
+Shared OS scope loads before the concrete OS scope. Later files override
+earlier values.
 
 If no matching Brewfiles exist, the script fails with an error.
 
@@ -163,6 +188,7 @@ Behaviour:
 10. Reject unsupported Brewfile directives with a clear error.
 11. Append one CSV row for each successful install to the per-host activity log.
 12. Do not run `brew update` or upgrade already installed entries.
+13. Print Local Network warnings only for configured managed tokens that were already installed or were installed by the current run.
 
 The script does not implement architecture selection. Homebrew handles ARM/x86 selection.
 Homebrew metadata updates and package upgrades are currently outside this
@@ -220,7 +246,7 @@ It owns generic helpers for:
 
 Shared logging defaults used by those helpers are loaded from:
 
-- `configs/shared/shared/logging-shared.conf`
+- `configs/shared/shared/logging.conf`
 
 Script-specific workflow logic should stay in the calling script instead of
 being moved into `libs/shared/shared/common.sh` too early.
@@ -273,7 +299,7 @@ Dates and times are written in South Africa time using the
 
 Those shared logging defaults are configured in:
 
-- `configs/shared/shared/logging-shared.conf`
+- `configs/shared/shared/logging.conf`
 
 ## Tests
 
@@ -315,7 +341,7 @@ Behaviour:
 
 External macOS download defaults are configured in:
 
-- `configs/macos/downloads/macos-download-shared.conf`
+- `configs/macos/downloads/macos-download.conf`
 
 Note:
 
@@ -339,20 +365,28 @@ Behaviour:
 
 ## `scripts/macos/system/system-configure`
 
-This script applies the managed macOS system settings from `configs/macos/system/`.
+This script applies the managed macOS system settings from layered files under
+`configs/shared/system/` and `configs/macos/system/`.
 
 Behaviour:
 
-1. Detect repo root and current host.
+1. Detect repo root, current host, and current username.
 2. Require macOS and the needed system commands.
-3. Resolve the preferred config with host fallback:
-   - `configs/macos/system/system-settings-<host>.conf`
-   - `configs/macos/system/system-settings-shared.conf`
+3. Resolve all matching layered system config files in this order:
+   - `configs/shared/system/system-shared-shared.conf`
+   - `configs/shared/system/system-shared-<username>.conf`
+   - `configs/shared/system/system-<host>-shared.conf`
+   - `configs/shared/system/system-<host>-<username>.conf`
+   - `configs/macos/system/system-shared-shared.conf`
+   - `configs/macos/system/system-shared-<username>.conf`
+   - `configs/macos/system/system-<host>-shared.conf`
+   - `configs/macos/system/system-<host>-<username>.conf`
 4. Apply Dock auto-hide and Spaces ordering only when values differ.
 5. Restart the Dock only when Dock settings changed.
 6. Apply AC power sleep with `pmset` only when the managed value differs.
 7. Use `pmset -c` on portable Macs and `pmset -a` on non-portable Macs.
-8. Append one `Updated` CSV row for each managed setting that actually changes.
+8. Validate the final merged config after all matching layers load.
+9. Append one `Updated` CSV row for each managed setting that actually changes.
 
 The current managed macOS system settings are:
 

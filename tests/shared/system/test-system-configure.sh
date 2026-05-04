@@ -2,7 +2,8 @@
 # Shared characterization test for the active macOS system workflow.
 #
 # This test covers:
-# - macOS-only host-fallback config resolution under configs/<os>/system/
+# - layered macOS system config resolution under configs/<os>/system/
+# - shared support for OS, host, and username slots
 # - Dock auto-hide and Spaces ordering application through defaults
 # - AC power sleep management through pmset and sudo
 # - help output and argument handling
@@ -61,16 +62,16 @@ make_fake_repo() {
   mkdir -p \
     "$temp_dir/scripts/macos/system" \
     "$temp_dir/configs/shared/shared" \
+    "$temp_dir/configs/shared/system" \
     "$temp_dir/configs/macos/system" \
     "$temp_dir/fake-bin" \
     "$temp_dir/libs/shared/shared"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/macos/system/system-configure"
   cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
-  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
+  cp "$ROOT/configs/shared/shared/logging.conf" "$temp_dir/configs/shared/shared/logging.conf"
   chmod +x "$temp_dir/scripts/macos/system/system-configure"
 }
 
-# Write a small executable stub used to isolate external command behavior.
 write_command_stub() {
   local path="$1"
   local body="$2"
@@ -79,8 +80,6 @@ write_command_stub() {
   chmod +x "$path"
 }
 
-# Provide deterministic uname, hostname, whoami, defaults, pmset, sudo, and
-# killall behavior for the isolated fake repo.
 setup_common_stubs() {
   local temp_dir="$1"
   local fake_bin="$temp_dir/fake-bin"
@@ -188,11 +187,10 @@ exec "$@"'
   write_command_stub "$fake_bin/killall" '#!/usr/bin/env bash
 set -euo pipefail
 
-  STATE_DIR="${TEST_STATE_DIR:?}"
-  printf "%s\n" "$*" >> "$STATE_DIR/killall.log"'
+STATE_DIR="${TEST_STATE_DIR:?}"
+printf "%s\n" "$*" >> "$STATE_DIR/killall.log"'
 }
 
-# Run the active system script inside the fake repo with stubbed commands.
 run_in_fake_repo() {
   local temp_dir="$1"
   local output_file="$2"
@@ -202,12 +200,11 @@ run_in_fake_repo() {
   "$temp_dir/scripts/macos/system/system-configure" > "$output_file" 2>&1
 }
 
-# Write the shared macOS system config used by the isolated tests.
-write_shared_config() {
+write_shared_shared_config() {
   local temp_dir="$1"
 
-  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
-# Shared macOS system settings.
+  cat > "$temp_dir/configs/shared/system/system-shared-shared.conf" <<'EOF'
+# Shared system settings for all OS scopes, hosts, and usernames.
 DOCK_AUTO_HIDE=true
 DOCK_REORDER_SPACES_BY_RECENT_USE=false
 AC_POWER_SYSTEM_SLEEP_MINUTES=0
@@ -220,6 +217,52 @@ SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
 SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
 SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
 SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
+EOF
+}
+
+write_shared_host_override() {
+  local temp_dir="$1"
+  local host_name="$2"
+  local body="$3"
+
+  cat > "$temp_dir/configs/shared/system/system-$host_name-shared.conf" <<EOF
+# Shared system overrides for host '$host_name'.
+$body
+EOF
+}
+
+write_shared_user_override() {
+  local temp_dir="$1"
+  local user_name="$2"
+  local body="$3"
+
+  cat > "$temp_dir/configs/shared/system/system-shared-$user_name.conf" <<EOF
+# Shared system overrides for user '$user_name'.
+$body
+EOF
+}
+
+write_shared_host_user_override() {
+  local temp_dir="$1"
+  local host_name="$2"
+  local user_name="$3"
+  local body="$4"
+
+  cat > "$temp_dir/configs/shared/system/system-$host_name-$user_name.conf" <<EOF
+# Shared system overrides for host '$host_name' and user '$user_name'.
+$body
+EOF
+}
+
+write_macos_host_user_override() {
+  local temp_dir="$1"
+  local host_name="$2"
+  local user_name="$3"
+  local body="$4"
+
+  cat > "$temp_dir/configs/macos/system/system-$host_name-$user_name.conf" <<EOF
+# macOS system overrides for host '$host_name' and user '$user_name'.
+$body
 EOF
 }
 
@@ -241,7 +284,7 @@ test_help_output() {
 
   assert_contains "$output_file" 'Usage: system-configure' 'shows system help usage'
   assert_contains "$output_file" '[-h|--help]' 'documents both help flags'
-  assert_contains "$output_file" 'Requires sudo for the managed pmset change.' 'documents sudo requirement'
+  assert_contains "$output_file" 'Loads matching layered system config files in order.' 'documents layered config loading'
 }
 
 test_short_help_output() {
@@ -262,7 +305,7 @@ test_short_help_output() {
 
   assert_contains "$output_file" 'Usage: system-configure' 'shows system short help usage'
   assert_contains "$output_file" '[-h|--help]' 'documents both help flags in short help'
-  assert_contains "$output_file" 'Requires sudo for the managed pmset change.' 'documents sudo requirement in short help'
+  assert_contains "$output_file" 'Loads matching layered system config files in order.' 'documents layered config loading in short help'
 }
 
 test_rejects_positional_arguments() {
@@ -301,7 +344,7 @@ test_requires_macos() {
   assert_contains "$output_file" 'ERROR: This script is for macOS only' 'system-configure should fail with a clear macOS-only message'
 }
 
-test_requires_system_config_file() {
+test_fails_when_no_matching_system_config_layers_exist() {
   local temp_dir
   local output_file
 
@@ -314,13 +357,13 @@ test_requires_system_config_file() {
   setup_common_stubs "$temp_dir"
 
   if run_in_fake_repo "$temp_dir" "$output_file"; then
-    fail 'system-configure should fail when the managed system config file is missing'
+    fail 'system-configure should fail when no matching layered config files exist'
   fi
 
-  assert_contains "$output_file" 'ERROR: Managed macOS system config not found:' 'system-configure should fail clearly when the managed config file is missing'
+  assert_contains "$output_file" 'ERROR: No matching system config files found for os=macos host=maldoria username=ezirius' 'system-configure should fail clearly when no layered config files match'
 }
 
-test_requires_system_config_values_from_config_file() {
+test_requires_system_config_values_from_final_layered_config() {
   local temp_dir
   local output_file
 
@@ -332,8 +375,8 @@ test_requires_system_config_values_from_config_file() {
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
 
-  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
-# Shared macOS system settings.
+  cat > "$temp_dir/configs/shared/system/system-shared-shared.conf" <<'EOF'
+# Shared system settings for all OS scopes, hosts, and usernames.
 DOCK_AUTO_HIDE=true
 DOCK_REORDER_SPACES_BY_RECENT_USE=false
 AC_POWER_SYSTEM_SLEEP_MINUTES=0
@@ -348,10 +391,10 @@ SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
 EOF
 
   if SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN='system-dock-autohide' run_in_fake_repo "$temp_dir" "$output_file"; then
-    fail 'system-configure should fail when a required config value is missing from the config file even if exported in the environment'
+    fail 'system-configure should fail when a required layered config value is missing even if exported in the environment'
   fi
 
-  assert_contains "$output_file" 'ERROR: SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config' 'system-configure should require managed values to come from the config file itself'
+  assert_contains "$output_file" 'ERROR: SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config' 'system-configure should require managed values to come from layered config files themselves'
 }
 
 test_rejects_invalid_sleep_minutes_before_applying_changes() {
@@ -369,22 +412,8 @@ test_rejects_invalid_sleep_minutes_before_applying_changes() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-
-  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
-# Shared macOS system settings.
-DOCK_AUTO_HIDE=true
-DOCK_REORDER_SPACES_BY_RECENT_USE=false
-AC_POWER_SYSTEM_SLEEP_MINUTES=never
-SYSTEM_DOCK_DOMAIN="com.apple.dock"
-SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
-SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
-SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
-SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
-SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
-SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
-SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
-SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
-EOF
+  write_shared_shared_config "$temp_dir"
+  write_shared_host_override "$temp_dir" 'maldoria' 'AC_POWER_SYSTEM_SLEEP_MINUTES=never'
 
   if run_in_fake_repo "$temp_dir" "$output_file"; then
     fail 'system-configure should reject invalid sleep minutes before applying changes'
@@ -411,22 +440,8 @@ test_rejects_invalid_pmset_scope_before_applying_changes() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-
-  cat > "$temp_dir/configs/macos/system/system-settings-shared.conf" <<'EOF'
-# Shared macOS system settings.
-DOCK_AUTO_HIDE=true
-DOCK_REORDER_SPACES_BY_RECENT_USE=false
-AC_POWER_SYSTEM_SLEEP_MINUTES=0
-SYSTEM_DOCK_DOMAIN="com.apple.dock"
-SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
-SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
-SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
-SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
-SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
-SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
-SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="portable"
-SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
-EOF
+  write_shared_shared_config "$temp_dir"
+  write_shared_user_override "$temp_dir" 'ezirius' 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="portable"'
 
   if run_in_fake_repo "$temp_dir" "$output_file"; then
     fail 'system-configure should reject invalid pmset scope before applying changes'
@@ -438,8 +453,7 @@ EOF
   assert_not_contains "$temp_dir/state/pmset.log" ' sleep ' 'invalid pmset scope should fail before pmset writes'
 }
 
-# Verify that the shared config is applied on a portable Mac when values differ.
-test_applies_shared_system_config_on_portable_mac() {
+test_applies_shared_shared_system_config_on_portable_mac() {
   local temp_dir
   local output_file
   local log_file
@@ -456,11 +470,11 @@ test_applies_shared_system_config_on_portable_mac() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-  write_shared_config "$temp_dir"
+  write_shared_shared_config "$temp_dir"
 
   if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=0 TEST_DEFAULTS_MRU_SPACES_CURRENT=1 TEST_PMSET_CURRENT_SLEEP=10 TEST_PMSET_PORTABLE=1 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
-    fail 'system-configure should apply shared macOS settings'
+    fail 'system-configure should apply shared shared system settings'
   fi
 
   assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock autohide -bool true' 'writes Dock auto-hide setting'
@@ -474,8 +488,7 @@ test_applies_shared_system_config_on_portable_mac() {
   assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs pmset sleep change'
 }
 
-# Verify host-specific override selection and no-op pmset behavior.
-test_prefers_host_specific_override_and_skips_unchanged_sleep() {
+test_prefers_x_shared_over_shared_x_when_both_match() {
   local temp_dir
   local output_file
   local log_file
@@ -492,37 +505,48 @@ test_prefers_host_specific_override_and_skips_unchanged_sleep() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-  write_shared_config "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_shared_user_override "$temp_dir" 'ezirius' 'DOCK_REORDER_SPACES_BY_RECENT_USE=true'
+  write_shared_host_override "$temp_dir" 'maldoria' 'DOCK_REORDER_SPACES_BY_RECENT_USE=false'
 
-  cat > "$temp_dir/configs/macos/system/system-settings-maldoria.conf" <<'EOF'
-# Host-specific macOS system settings.
-DOCK_AUTO_HIDE=false
-DOCK_REORDER_SPACES_BY_RECENT_USE=true
-AC_POWER_SYSTEM_SLEEP_MINUTES=10
-SYSTEM_DOCK_DOMAIN="com.apple.dock"
-SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
-SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
-SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN="system-dock-autohide"
-SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN="system-dock-mru-spaces"
-SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
-SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
-SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
-SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
-EOF
-
-  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=0 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=10 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=1 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
-    fail 'system-configure should prefer host-specific config'
+    fail 'system-configure should prefer x.shared over shared.x when both match'
   fi
 
-  assert_not_contains "$temp_dir/state/defaults.log" 'write com.apple.dock autohide -bool true' 'host-specific override should prevent shared auto-hide write'
-  assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool true' 'host-specific override should apply host spaces setting'
-  assert_contains "$temp_dir/state/killall.log" 'Dock' 'host-specific Dock change should restart Dock'
-  assert_not_contains "$temp_dir/state/sudo.log" '-v' 'unchanged pmset setting should not require sudo'
-  assert_not_contains "$temp_dir/state/pmset.log" '-a sleep 10' 'unchanged non-portable sleep setting should not be reapplied'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs only changed host-specific Dock setting'
-  assert_not_contains "$log_file" 'system-dock-autohide' 'does not log unchanged auto-hide setting'
-  assert_not_contains "$log_file" 'system-pmset-sleep' 'does not log unchanged pmset setting'
+  assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool false' 'host-shared override should win over user-shared override'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs the host-shared override application'
+}
+
+test_prefers_x_x_over_all_earlier_layers() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_shared_user_override "$temp_dir" 'ezirius' 'DOCK_AUTO_HIDE=false'
+  write_shared_host_override "$temp_dir" 'maldoria' 'DOCK_AUTO_HIDE=true'
+  write_shared_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'DOCK_AUTO_HIDE=false'
+
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should prefer host-user override over all earlier layers'
+  fi
+
+  assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock autohide -bool false' 'host-user override should win over earlier shared layers'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-autohide,' 'logs the host-user override application'
 }
 
 test_applies_non_portable_sleep_change_with_a_scope() {
@@ -542,7 +566,7 @@ test_applies_non_portable_sleep_change_with_a_scope() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-  write_shared_config "$temp_dir"
+  write_shared_shared_config "$temp_dir"
 
   if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=10 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
@@ -554,7 +578,7 @@ test_applies_non_portable_sleep_change_with_a_scope() {
   assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs changed non-portable pmset setting'
 }
 
-test_enforces_false_dock_value_when_key_is_unset() {
+test_partial_override_files_inherit_required_values_from_baseline() {
   local temp_dir
   local output_file
   local log_file
@@ -571,17 +595,16 @@ test_enforces_false_dock_value_when_key_is_unset() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-  write_shared_config "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_shared_host_override "$temp_dir" 'maldoria' 'DOCK_REORDER_SPACES_BY_RECENT_USE=true'
 
-  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_MISSING=1 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+  if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
-    fail 'system-configure should write managed false values when defaults keys are unset'
+    fail 'system-configure should allow partial override files when the baseline provides required keys'
   fi
 
-  assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool false' 'writes missing Dock key for managed false value'
-  assert_contains "$temp_dir/state/killall.log" 'Dock' 'restarts Dock when an unset key is enforced'
-  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs enforced false Dock value when key was unset'
-  assert_not_contains "$temp_dir/state/sudo.log" '-v' 'unchanged pmset value should still skip sudo'
+  assert_contains "$temp_dir/state/defaults.log" 'write com.apple.dock mru-spaces -bool true' 'partial host override should inherit required keys from baseline and apply its override'
+  assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-dock-mru-spaces,' 'logs the inherited partial override change'
 }
 
 test_skips_dock_restart_when_dock_settings_are_already_correct() {
@@ -601,7 +624,7 @@ test_skips_dock_restart_when_dock_settings_are_already_correct() {
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-  write_shared_config "$temp_dir"
+  write_shared_shared_config "$temp_dir"
 
   if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=1 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
@@ -634,7 +657,7 @@ test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbatter
 
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
-  write_shared_config "$temp_dir"
+  write_shared_shared_config "$temp_dir"
 
   if ! TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=10 TEST_PMSET_BATT_OUTPUT='Now drawing from Battery Power' run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
@@ -646,9 +669,10 @@ test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbatter
   assert_contains "$log_file" '20260427,143015,maldoria,Updated,system-pmset-sleep,' 'logs the portable sleep change'
 }
 
-# Verify top-level documentation headers for the active system files.
 test_documentation_headers() {
-  assert_starts_with_comment "$ROOT/configs/macos/system/system-settings-shared.conf" 'system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-shared-shared.conf" 'shared shared system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-maldoria-shared.conf" 'shared host system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-maravyn-shared.conf" 'second shared host system config should start with a header comment'
   assert_starts_with_comment "$ROOT/scripts/macos/system/system-configure" 'system script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/system/test-system-configure.sh" 'system test should start with a header comment after shebang'
 }
@@ -657,14 +681,15 @@ test_help_output
 test_short_help_output
 test_rejects_positional_arguments
 test_requires_macos
-test_requires_system_config_file
-test_requires_system_config_values_from_config_file
+test_fails_when_no_matching_system_config_layers_exist
+test_requires_system_config_values_from_final_layered_config
 test_rejects_invalid_sleep_minutes_before_applying_changes
 test_rejects_invalid_pmset_scope_before_applying_changes
-test_applies_shared_system_config_on_portable_mac
-test_prefers_host_specific_override_and_skips_unchanged_sleep
+test_applies_shared_shared_system_config_on_portable_mac
+test_prefers_x_shared_over_shared_x_when_both_match
+test_prefers_x_x_over_all_earlier_layers
 test_applies_non_portable_sleep_change_with_a_scope
-test_enforces_false_dock_value_when_key_is_unset
+test_partial_override_files_inherit_required_values_from_baseline
 test_skips_dock_restart_when_dock_settings_are_already_correct
 test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbattery_token
 test_documentation_headers

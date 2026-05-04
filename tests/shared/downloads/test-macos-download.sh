@@ -89,8 +89,8 @@ make_fake_repo() {
     "$temp_dir/fake-bin"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/macos/downloads/macos-download"
   cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
-  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
-  cp "$ROOT/configs/macos/downloads/macos-download-shared.conf" "$temp_dir/configs/macos/downloads/macos-download-shared.conf"
+  cp "$ROOT/configs/shared/shared/logging.conf" "$temp_dir/configs/shared/shared/logging.conf"
+  cp "$ROOT/configs/macos/downloads/macos-download.conf" "$temp_dir/configs/macos/downloads/macos-download.conf"
   chmod +x "$temp_dir/scripts/macos/downloads/macos-download"
 }
 
@@ -294,7 +294,7 @@ write_download_config() {
   local temp_dir="$1"
   local download_dir_relative="${2:-downloads/macos/downloads}"
 
-  cat > "$temp_dir/configs/macos/downloads/macos-download-shared.conf" <<EOF
+  cat > "$temp_dir/configs/macos/downloads/macos-download.conf" <<EOF
 # Shared macOS download runtime defaults for all account names.
 MACOS_DOWNLOAD_CATALOG_URL="https://mesu.apple.com/assets/macos/com_apple_macOSIPSW/com_apple_macOSIPSW.xml"
 MACOS_DOWNLOAD_DIR_RELATIVE="$download_dir_relative"
@@ -321,7 +321,7 @@ EOF
 write_download_config_with_custom_runtime_text() {
   local temp_dir="$1"
 
-  cat > "$temp_dir/configs/macos/downloads/macos-download-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/macos/downloads/macos-download.conf" <<'EOF'
 # Shared macOS download runtime defaults for all account names.
 MACOS_DOWNLOAD_CATALOG_URL="https://mesu.apple.com/assets/macos/com_apple_macOSIPSW/com_apple_macOSIPSW.xml"
 MACOS_DOWNLOAD_DIR_RELATIVE="downloads/macos/downloads"
@@ -445,7 +445,7 @@ test_honours_configured_section_labels() {
   setup_common_stubs "$temp_dir"
   mkdir -p "$temp_dir/state"
 
-  cat > "$temp_dir/configs/macos/downloads/macos-download-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/macos/downloads/macos-download.conf" <<'EOF'
 # Shared macOS download runtime defaults for all account names.
 MACOS_DOWNLOAD_CATALOG_URL="https://mesu.apple.com/assets/macos/com_apple_macOSIPSW/com_apple_macOSIPSW.xml"
 MACOS_DOWNLOAD_DIR_RELATIVE="downloads/macos/downloads"
@@ -852,7 +852,7 @@ test_requires_download_config_file() {
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
   mkdir -p "$temp_dir/state"
-  rm -f "$temp_dir/configs/macos/downloads/macos-download-shared.conf"
+  rm -f "$temp_dir/configs/macos/downloads/macos-download.conf"
 
   if TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
     fail 'macos-download should fail when the required download config file is missing'
@@ -876,7 +876,7 @@ test_requires_download_config_values_from_config_file() {
   setup_common_stubs "$temp_dir"
   mkdir -p "$temp_dir/state"
 
-  cat > "$temp_dir/configs/macos/downloads/macos-download-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/macos/downloads/macos-download.conf" <<'EOF'
 # Shared macOS download runtime defaults for all account names.
 MACOS_DOWNLOAD_CATALOG_URL="https://mesu.apple.com/assets/macos/com_apple_macOSIPSW/com_apple_macOSIPSW.xml"
 MACOS_DOWNLOAD_ARM_SECTION_LABEL="ARM"

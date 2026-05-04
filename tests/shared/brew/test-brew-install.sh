@@ -109,8 +109,8 @@ make_fake_repo() {
     mkdir -p "$temp_dir/libs/shared/shared"
     cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
   fi
-  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
-  cp "$ROOT/configs/shared/brew/brew-install-shared.conf" "$temp_dir/configs/shared/brew/brew-install-shared.conf"
+  cp "$ROOT/configs/shared/shared/logging.conf" "$temp_dir/configs/shared/shared/logging.conf"
+  cp "$ROOT/configs/shared/brew/brew-install.conf" "$temp_dir/configs/shared/brew/brew-install.conf"
   chmod +x "$temp_dir/scripts/shared/brew/brew-install"
 }
 
@@ -363,10 +363,11 @@ test_selects_layered_brewfiles_and_installs_missing_only() {
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/configs/linux/brew"
   mkdir -p "$temp_dir/state"
   : > "$temp_dir/state/installed-formulae"
   : > "$temp_dir/state/installed-casks"
-  printf 'opencode\n' > "$temp_dir/state/installed-formulae"
+  printf 'ripgrep\n' > "$temp_dir/state/installed-formulae"
   printf 'ghostty\n' > "$temp_dir/state/installed-casks"
 
   trap 'rm -rf "$temp_dir"' RETURN
@@ -375,18 +376,33 @@ test_selects_layered_brewfiles_and_installs_missing_only() {
   setup_common_stubs "$temp_dir"
   setup_brew_stub "$temp_dir"
 
+  cat > "$temp_dir/configs/shared/brew/Brewfile-shared-shared" <<'EOF'
+brew "fd"
+EOF
+
   cat > "$temp_dir/configs/shared/brew/Brewfile-shared-ezirius" <<'EOF'
-brew "opencode"
 brew "ripgrep"
+EOF
+
+  cat > "$temp_dir/configs/shared/brew/Brewfile-maldoria-shared" <<'EOF'
+cask "utm"
 EOF
 
   cat > "$temp_dir/configs/shared/brew/Brewfile-maldoria-ezirius" <<'EOF'
 cask "ghostty"
-cask "utm"
+cask "tailscale-app"
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-shared" <<'EOF'
+brew "wget"
 EOF
 
   cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
 brew "nushell"
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-maldoria-shared" <<'EOF'
+cask "podman-desktop"
 EOF
 
   cat > "$temp_dir/configs/macos/brew/Brewfile-maldoria-ezirius" <<'EOF'
@@ -401,26 +417,303 @@ EOF
 brew "wrong-user"
 EOF
 
+  cat > "$temp_dir/configs/linux/brew/Brewfile-shared-shared" <<'EOF'
+brew "wrong-os"
+EOF
+
   if ! run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
     fail 'script should succeed when matching Brewfiles exist'
   fi
 
-  assert_contains "$temp_dir/state/brew.log" 'install ripgrep' 'installs missing shared formula'
-  assert_contains "$temp_dir/state/brew.log" 'install nushell' 'installs missing os formula'
-  assert_contains "$temp_dir/state/brew.log" 'install --cask utm' 'installs missing shared host cask'
-  assert_contains "$temp_dir/state/brew.log" 'install --cask vscodium' 'installs missing os host cask'
+  assert_contains "$temp_dir/state/brew.log" 'install fd' 'installs missing shared shared formula'
+  assert_contains "$temp_dir/state/brew.log" 'install wget' 'installs missing os shared shared formula'
+  assert_contains "$temp_dir/state/brew.log" 'install nushell' 'installs missing os shared user formula'
+  assert_contains "$temp_dir/state/brew.log" 'install --cask utm' 'installs missing shared host shared cask'
+  assert_contains "$temp_dir/state/brew.log" 'install --cask tailscale-app' 'installs missing shared host user cask'
+  assert_contains "$temp_dir/state/brew.log" 'install --cask podman-desktop' 'installs missing os host shared cask'
+  assert_contains "$temp_dir/state/brew.log" 'install --cask vscodium' 'installs missing os host user cask'
   assert_not_contains "$temp_dir/state/brew.log" 'update' 'brew-install should not run brew update'
-  assert_not_contains "$temp_dir/state/brew.log" 'install opencode' 'skips installed formula'
-  assert_not_contains "$temp_dir/state/brew.log" 'install --cask ghostty' 'skips installed cask'
+  assert_not_contains "$temp_dir/state/brew.log" 'install ripgrep' 'skips installed shared user formula'
+  assert_not_contains "$temp_dir/state/brew.log" 'install --cask ghostty' 'skips installed shared host user cask'
   assert_not_contains "$temp_dir/state/brew.log" 'should-not-install' 'ignores other host brewfile'
   assert_not_contains "$temp_dir/state/brew.log" 'wrong-user' 'ignores other username brewfile'
-  assert_contains "$output_file" 'Brewfile-shared-ezirius' 'prints selected shared brewfile'
-  assert_contains "$output_file" 'Brewfile-maldoria-ezirius' 'prints selected host brewfile'
+  assert_not_contains "$temp_dir/state/brew.log" 'wrong-os' 'ignores other os brewfile'
+  assert_contains "$output_file" 'Brewfile-shared-shared' 'prints selected shared shared brewfile'
+  assert_contains "$output_file" 'Brewfile-shared-ezirius' 'prints selected shared user brewfile'
+  assert_contains "$output_file" 'Brewfile-maldoria-shared' 'prints selected host shared brewfile'
+  assert_contains "$output_file" 'Brewfile-maldoria-ezirius' 'prints selected host user brewfile'
   assert_contains "$output_file" 'WARNING: Enable macOS Local Network access for these apps in System Settings > Privacy & Security > Local Network. This is needed, for example, to connect to the Multipass VM shell from the CLI:' 'prints Local Network warning heading after successful install runs'
-  assert_contains "$output_file" 'Enable Local Network access for: Ghostty' 'prints Ghostty Local Network warning'
-  assert_contains "$output_file" 'Enable Local Network access for: Multipass' 'prints Multipass Local Network warning'
-  assert_contains "$output_file" 'Enable Local Network access for: VSCodium' 'prints VSCodium Local Network warning'
+  assert_contains "$output_file" 'Enable Local Network access for: Ghostty' 'prints Ghostty Local Network warning when Ghostty is already installed from the matched config'
+  assert_contains "$output_file" 'Enable Local Network access for: VSCodium' 'prints VSCodium Local Network warning when VSCodium is newly installed from the matched config'
+  assert_not_contains "$output_file" 'Enable Local Network access for: Multipass' 'does not warn for configured items that are absent from the matched config'
+}
+
+test_warns_for_already_installed_configured_item_in_matched_brewfiles() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  printf 'ghostty\n' > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+cask "ghostty"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should warn for already installed configured items in matched Brewfiles'
+  fi
+
+  assert_contains "$output_file" 'Enable Local Network access for: Ghostty' 'warns for already installed configured item in the matched config'
+}
+
+test_warns_for_newly_installed_configured_item_in_matched_brewfiles() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+cask "vscodium"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should warn for newly installed configured items in matched Brewfiles'
+  fi
+
+  assert_contains "$output_file" 'Enable Local Network access for: VSCodium' 'warns for newly installed configured item in the matched config'
+}
+
+test_does_not_warn_for_configured_item_not_in_matched_brewfiles() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should ignore configured warning items that are absent from matched Brewfiles'
+  fi
+
+  assert_not_contains "$output_file" 'Enable Local Network access for: Multipass' 'does not warn for configured items absent from matched Brewfiles'
+}
+
+test_does_not_warn_for_non_configured_item_even_if_installed() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  printf 'utm\n' > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+cask "utm"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should not warn for installed items that are not configured for Local Network warnings'
+  fi
+
+  assert_not_contains "$output_file" 'Enable Local Network access for:' 'does not warn for non-configured installed items'
+}
+
+test_does_not_print_warning_heading_when_no_relevant_warning_items_exist() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should suppress the Local Network warning heading when nothing relevant matches'
+  fi
+
+  assert_not_contains "$output_file" 'WARNING: Enable macOS Local Network access for these apps in System Settings > Privacy & Security > Local Network.' 'does not print the Local Network warning heading when nothing relevant matches'
+}
+
+test_warn_matching_is_type_agnostic() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+  printf 'multipass\n' > "$temp_dir/state/installed-formulae"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "multipass"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should match Local Network warnings by token regardless of brew or cask entry type'
+  fi
+
+  assert_contains "$output_file" 'Enable Local Network access for: Multipass' 'matches configured warning items by token regardless of entry type'
+}
+
+test_supports_shared_shared_brewfile() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/shared/brew/Brewfile-shared-shared" <<'EOF'
+brew "fd"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should succeed when only the shared shared Brewfile exists'
+  fi
+
+  assert_contains "$temp_dir/state/brew.log" 'install fd' 'installs from shared shared Brewfile'
+  assert_contains "$output_file" 'Brewfile-shared-shared' 'prints selected shared shared Brewfile'
+}
+
+test_supports_host_shared_brewfile() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/shared/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "ripgrep"
+EOF
+
+  cat > "$temp_dir/configs/shared/brew/Brewfile-maldoria-shared" <<'EOF'
+cask "utm"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should support a host shared Brewfile layer'
+  fi
+
+  assert_contains "$temp_dir/state/brew.log" 'install ripgrep' 'installs from shared user Brewfile'
+  assert_contains "$temp_dir/state/brew.log" 'install --cask utm' 'installs from host shared Brewfile'
+  assert_contains "$output_file" 'Brewfile-maldoria-shared' 'prints selected host shared Brewfile'
+}
+
+test_current_real_style_brewfiles_still_work() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-maldoria-ezirius" <<'EOF'
+cask "vscodium"
+EOF
+
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should keep current real-style Brewfile resolution working unchanged'
+  fi
+
+  assert_contains "$temp_dir/state/brew.log" 'install nushell' 'installs from current shared user Brewfile'
+  assert_contains "$temp_dir/state/brew.log" 'install --cask vscodium' 'installs from current host user Brewfile'
 }
 
 test_fails_when_no_matching_brewfiles_exist() {
@@ -495,6 +788,9 @@ test_help_output() {
   assert_contains "$output_file" 'Usage: brew-install' 'shows help usage'
   assert_contains "$output_file" '[-h|--help]' 'documents both help flags'
   assert_contains "$output_file" 'Brewfile-<host>-<username>' 'documents Brewfile naming in help'
+  assert_contains "$output_file" "<host> and <username> each support 'shared'" 'documents shared support in both Brewfile naming slots'
+  assert_contains "$output_file" 'configs/shared/brew/Brewfile-shared-shared' 'documents shared shared Brewfile resolution in help'
+  assert_contains "$output_file" 'configs/<os>/brew/Brewfile-<host>-<username>' 'documents full 8-layer Brewfile resolution in help'
 }
 
 test_short_help_output() {
@@ -518,6 +814,8 @@ test_short_help_output() {
   assert_contains "$output_file" 'Usage: brew-install' 'shows short help usage'
   assert_contains "$output_file" '[-h|--help]' 'documents both help flags in short help'
   assert_contains "$output_file" 'Brewfile-<host>-<username>' 'documents Brewfile naming in short help'
+  assert_contains "$output_file" "<host> and <username> each support 'shared'" 'documents shared support in both Brewfile naming slots in short help'
+  assert_contains "$output_file" 'configs/shared/brew/Brewfile-shared-shared' 'documents shared shared Brewfile resolution in short help'
 }
 
 test_rejects_positional_arguments() {
@@ -686,10 +984,12 @@ test_active_files_are_documented() {
   [[ -x "$ROOT/scripts/macos/system/system-configure" ]] || fail 'active system script should be executable'
   assert_starts_with_comment "$ROOT/install" 'root install script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/configs/macos/brew/Brewfile-shared-ezirius" 'active Brewfile should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/shared/brew/brew-install-shared.conf" 'shared brew runtime config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/shared/shared/logging-shared.conf" 'shared logging config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/macos/downloads/macos-download-shared.conf" 'macos downloads runtime config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/macos/system/system-settings-shared.conf" 'active system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/brew/brew-install.conf" 'brew installer runtime config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/shared/logging.conf" 'shared logging config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/macos/downloads/macos-download.conf" 'macos downloads runtime config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-shared-shared.conf" 'active shared system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-maldoria-shared.conf" 'active host-shared system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-maravyn-shared.conf" 'second active host-shared system config should start with a header comment'
   assert_starts_with_comment "$ROOT/libs/shared/shared/common.sh" 'shared library should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/scripts/shared/brew/brew-install" 'active script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/scripts/shared/shared/bootstrap" 'active bootstrap script should start with a header comment after shebang'
@@ -709,10 +1009,10 @@ test_active_files_are_documented() {
   assert_contains "$ROOT/tests/shared/system/test-system-configure.sh" 'This test covers:' 'active system test header should describe covered behaviours'
   assert_contains "$ROOT/README.md" 'All active scripts, libs, tests, configs, and docs should be well documented.' 'README should state the documentation requirement'
   assert_contains "$ROOT/README.md" '- Public repo bootstrap install into a fixed per-user path' 'README should describe the root install workflow'
-  assert_contains "$ROOT/README.md" '- macOS system configuration with host-specific override and shared fallback settings files' 'README should describe the current system config fallback model'
+  assert_contains "$ROOT/README.md" '- macOS system configuration through layered shared, host, and user settings files' 'README should describe the layered system config model'
   assert_contains "$ROOT/README.md" 'curl -fsSL https://raw.githubusercontent.com/ezirius/installations-and-configurations/main/install | bash' 'README should document the public install command'
   assert_contains "$ROOT/README.md" '- `<host>` is either `shared` or the current hostname normalised to lowercase up to the first `.`' 'README should document host normalisation'
-  assert_contains "$ROOT/README.md" '- `<username>` is `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`' 'README should document username normalisation'
+  assert_contains "$ROOT/README.md" '- `<username>` is either `shared` or `whoami`, normalised to lowercase with non-alphanumeric characters converted to `-`' 'README should document username normalisation'
   assert_contains "$ROOT/README.md" '- leading and trailing `-` characters are trimmed' 'README should document trimming dash runs'
   assert_contains "$ROOT/README.md" '- repeated `-` characters are collapsed' 'README should document collapsing repeated dashes'
   assert_contains "$ROOT/AGENTS.md" 'Keep all scripts, code, libraries, tests, configs, and active docs well documented.' 'AGENTS should state the documentation requirement'
@@ -1011,7 +1311,7 @@ test_requires_brew_installer_config_file() {
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
   setup_brew_stub "$temp_dir"
-  rm -f "$temp_dir/configs/shared/brew/brew-install-shared.conf"
+  rm -f "$temp_dir/configs/shared/brew/brew-install.conf"
 
   cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
 brew "nushell"
@@ -1040,7 +1340,7 @@ test_requires_brew_installer_values_from_config_file() {
   setup_common_stubs "$temp_dir"
   setup_brew_stub "$temp_dir"
 
-  cat > "$temp_dir/configs/shared/brew/brew-install-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/shared/brew/brew-install.conf" <<'EOF'
 # Shared Homebrew installer runtime defaults for all supported OS scopes and account names.
 #
 # This file owns external bootstrap values used by scripts/shared/brew/brew-install.
@@ -1070,24 +1370,25 @@ test_requires_local_network_warning_values_from_config_file() {
   setup_common_stubs "$temp_dir"
   setup_brew_stub "$temp_dir"
 
-  cat > "$temp_dir/configs/shared/brew/brew-install-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/shared/brew/brew-install.conf" <<'EOF'
 # Shared Homebrew installer runtime defaults for all supported OS scopes and account names.
 #
 # This file owns external bootstrap values used by scripts/shared/brew/brew-install.
 # Missing required brew installer config is a hard failure.
 
 HOMEBREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+LOCAL_NETWORK_WARNING_TITLE="WARNING: Enable macOS Local Network access for these apps in System Settings > Privacy & Security > Local Network."
 EOF
 
   cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
 brew "nushell"
 EOF
 
-  if LOCAL_NETWORK_WARNING_TITLE='WARNING: wrong source' run_in_fake_repo "$temp_dir" "$output_file"; then
+  if LOCAL_NETWORK_WARNING_ITEMS='ghostty:Wrong Source' run_in_fake_repo "$temp_dir" "$output_file"; then
     fail 'script should fail when required Local Network warning values are missing from config even if exported in the environment'
   fi
 
-  assert_contains "$output_file" 'ERROR: Required config value is not set: LOCAL_NETWORK_WARNING_TITLE' 'requires Local Network warning values to be defined by the config file itself'
+  assert_contains "$output_file" 'ERROR: Required config value is not set: LOCAL_NETWORK_WARNING_ITEMS' 'requires Local Network warning values to be defined by the config file itself'
 }
 
 test_handles_multiline_brew_version_output() {
@@ -1135,7 +1436,7 @@ test_requires_logging_values_from_config_file() {
   setup_common_stubs "$temp_dir"
   setup_brew_stub "$temp_dir"
 
-  cat > "$temp_dir/configs/shared/shared/logging-shared.conf" <<'EOF'
+  cat > "$temp_dir/configs/shared/shared/logging.conf" <<'EOF'
 # Shared logging defaults for all supported OS scopes and account names.
 ACTIVITY_LOG_ROOT_RELATIVE="logs"
 ACTIVITY_LOG_SCOPE_SUBDIR="shared"
@@ -1650,6 +1951,12 @@ test_active_shell_files_pass_bash_syntax_check() {
 }
 
 test_selects_layered_brewfiles_and_installs_missing_only
+test_warns_for_already_installed_configured_item_in_matched_brewfiles
+test_warns_for_newly_installed_configured_item_in_matched_brewfiles
+test_does_not_warn_for_configured_item_not_in_matched_brewfiles
+test_does_not_warn_for_non_configured_item_even_if_installed
+test_does_not_print_warning_heading_when_no_relevant_warning_items_exist
+test_warn_matching_is_type_agnostic
 test_fails_when_no_matching_brewfiles_exist
 test_selects_linux_brewfiles
 test_help_output
@@ -1668,6 +1975,9 @@ test_bootstraps_homebrew_and_logs_it
 test_bootstraps_homebrew_interactively_when_tty_is_available
 test_bootstraps_homebrew_non_interactively_when_tty_is_unavailable
 test_fails_clearly_when_non_interactive_homebrew_bootstrap_needs_sudo
+test_supports_shared_shared_brewfile
+test_supports_host_shared_brewfile
+test_current_real_style_brewfiles_still_work
 test_fails_clearly_when_bootstrap_curl_is_missing
 test_requires_brew_installer_config_file
 test_requires_brew_installer_values_from_config_file

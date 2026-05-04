@@ -67,7 +67,7 @@ make_fake_repo() {
     "$temp_dir/libs/shared/shared"
   cp "$SCRIPT_SOURCE" "$temp_dir/scripts/shared/shared/bootstrap"
   cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
-  cp "$ROOT/configs/shared/shared/logging-shared.conf" "$temp_dir/configs/shared/shared/logging-shared.conf"
+  cp "$ROOT/configs/shared/shared/logging.conf" "$temp_dir/configs/shared/shared/logging.conf"
   chmod +x "$temp_dir/scripts/shared/shared/bootstrap"
 }
 

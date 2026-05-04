@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Apply the managed macOS system settings.
 #
-# This script resolves macOS system config from:
-# - configs/macos/system/system-settings-shared.conf
-# - configs/macos/system/system-settings-<host>.conf
+# This script resolves layered macOS system config from:
+# - configs/shared/system/system-shared-shared.conf
+# - configs/shared/system/system-shared-<username>.conf
+# - configs/shared/system/system-<host>-shared.conf
+# - configs/shared/system/system-<host>-<username>.conf
+# - configs/macos/system/system-shared-shared.conf
+# - configs/macos/system/system-shared-<username>.conf
+# - configs/macos/system/system-<host>-shared.conf
+# - configs/macos/system/system-<host>-<username>.conf
 #
-# Host-specific config overrides the shared file when present.
+# Matching files are loaded from least specific to most specific.
 #
 # The current managed settings are Dock auto-hide, Spaces ordering by recent
 # use, and AC power system sleep minutes.
@@ -23,7 +29,7 @@ show_usage() {
 Apply the managed macOS system settings.
 
 Notes:
-  - Loads the matching host-specific config when present, otherwise the shared fallback.
+  - Loads matching layered system config files in order.
   - Requires sudo for the managed pmset change."
 }
 
@@ -37,30 +43,40 @@ require_command() {
   command -v "$command_name" >/dev/null 2>&1 || fail "Required command is missing: $command_name"
 }
 
-shared_system_config_path() {
-  local root_path="$1"
-  printf '%s/configs/macos/system/system-settings-shared.conf\n' "$root_path"
-}
+SYSTEM_CONFIGS=()
 
-# Prefer a host-specific config when present, otherwise use the shared file.
-preferred_system_config_path() {
-  local root_path="$1"
-  local host_name="$2"
-  local host_config
-
-  host_config="$root_path/configs/macos/system/system-settings-$host_name.conf"
-  if [[ -f "$host_config" ]]; then
-    printf '%s\n' "$host_config"
-    return 0
-  fi
-
-  shared_system_config_path "$root_path"
-}
-
-load_system_config() {
+add_system_config_candidate_if_present() {
   local config_path="$1"
 
-  [[ -f "$config_path" ]] || fail "Managed macOS system config not found: $config_path"
+  if [[ -f "$config_path" ]]; then
+    SYSTEM_CONFIGS+=("$config_path")
+  fi
+}
+
+resolve_system_configs() {
+  local root_path="$1"
+  local os_name="$2"
+  local host_name="$3"
+  local user_name="$4"
+
+  SYSTEM_CONFIGS=()
+  add_system_config_candidate_if_present "$root_path/configs/shared/system/system-shared-shared.conf"
+  add_system_config_candidate_if_present "$root_path/configs/shared/system/system-shared-$user_name.conf"
+  add_system_config_candidate_if_present "$root_path/configs/shared/system/system-$host_name-shared.conf"
+  add_system_config_candidate_if_present "$root_path/configs/shared/system/system-$host_name-$user_name.conf"
+  add_system_config_candidate_if_present "$root_path/configs/$os_name/system/system-shared-shared.conf"
+  add_system_config_candidate_if_present "$root_path/configs/$os_name/system/system-shared-$user_name.conf"
+  add_system_config_candidate_if_present "$root_path/configs/$os_name/system/system-$host_name-shared.conf"
+  add_system_config_candidate_if_present "$root_path/configs/$os_name/system/system-$host_name-$user_name.conf"
+
+  if [[ ${#SYSTEM_CONFIGS[@]} -eq 0 ]]; then
+    fail "No matching system config files found for os=$os_name host=$host_name username=$user_name"
+  fi
+}
+
+load_system_configs() {
+  local config_path
+
   clear_config_values \
     'DOCK_AUTO_HIDE' \
     'DOCK_REORDER_SPACES_BY_RECENT_USE' \
@@ -74,8 +90,11 @@ load_system_config() {
     'SYSTEM_PMSET_SLEEP_LOG_TOKEN' \
     'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' \
     'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE'
-  # shellcheck disable=SC1090
-  source "$config_path"
+
+  for config_path in "${SYSTEM_CONFIGS[@]}"; do
+    # shellcheck disable=SC1090
+    source "$config_path"
+  done
 }
 
 # Convert repo config booleans to the values expected by defaults.
@@ -218,7 +237,7 @@ main() {
   local root_path
   local os_name
   local host_name
-  local system_config
+  local user_name
 
   if is_help_flag "${1-}"; then
     show_usage
@@ -239,13 +258,14 @@ main() {
   load_shared_logging_config "$root_path"
   os_name="$(detect_os)"
   host_name="$(detect_host)"
-  system_config="$(preferred_system_config_path "$root_path" "$host_name")"
+  user_name="$(detect_username)"
+  resolve_system_configs "$root_path" "$os_name" "$host_name" "$user_name"
   DOCK_CHANGED='0'
   LOG_HOST_NAME="$host_name"
   LOG_FILE_PATH="$(activity_log_file_path "$root_path" "$os_name" "$host_name")"
 
   print_green 'Loading managed macOS system config'
-  load_system_config "$system_config"
+  load_system_configs
   validate_config
 
   print_green 'Applying Dock settings'

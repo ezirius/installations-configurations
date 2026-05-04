@@ -27,11 +27,13 @@ also active under the same repo layout.
 The active implementation surface is:
 
 - `install`
-- `configs/shared/shared/logging-shared.conf`
-- `configs/shared/brew/brew-install-shared.conf`
+- `configs/shared/shared/logging.conf`
+- `configs/shared/brew/brew-install.conf`
 - `configs/macos/brew/Brewfile-shared-ezirius`
-- `configs/macos/downloads/macos-download-shared.conf`
-- `configs/macos/system/system-settings-shared.conf`
+- `configs/macos/downloads/macos-download.conf`
+- `configs/shared/system/system-shared-shared.conf`
+- `configs/shared/system/system-maldoria-shared.conf`
+- `configs/shared/system/system-maravyn-shared.conf`
 - `libs/shared/shared/common.sh`
 - `scripts/shared/brew/brew-install`
 - `scripts/macos/downloads/macos-download`
@@ -81,12 +83,24 @@ This path pattern is the default for future application families as well.
 
 System config currently follows this path pattern under:
 
-- `configs/macos/system/system-settings-shared.conf`
-- `configs/macos/system/system-settings-<host>.conf`
+- `configs/<os>/system/system-<host>-<username>.conf`
+
+For system config, `shared` is valid in the OS, host, and username slots.
+
+Matching files load from least specific to most specific in this order within
+each OS scope:
+
+1. `shared.shared`
+2. `shared.x`
+3. `x.shared`
+4. `x.x`
+
+Shared OS scope loads before the concrete OS scope. Later files override
+earlier values.
 
 Download workflows currently follow this path pattern under:
 
-- `configs/macos/downloads/macos-download-shared.conf`
+- `configs/macos/downloads/macos-download.conf`
 - `scripts/macos/downloads/macos-download`
 - `tests/shared/downloads/test-macos-download.sh`
 
@@ -99,7 +113,7 @@ Brewfile-<host>-<username>
 Where:
 
 - `<host>` is either `shared` or the normalised current hostname.
-- `<username>` is the normalised `whoami` value.
+- `<username>` is either `shared` or the normalised `whoami` value.
 
 Normalization rules:
 
@@ -171,7 +185,7 @@ It is the right place for:
 
 Shared logging defaults used by those helpers must come from:
 
-- `configs/shared/shared/logging-shared.conf`
+- `configs/shared/shared/logging.conf`
 
 It is not the right place for:
 
@@ -318,10 +332,14 @@ When the system workflow changes a managed setting, log it as:
 
 `scripts/shared/brew/brew-install` resolves Brewfiles in this order:
 
-1. `configs/shared/brew/Brewfile-shared-<username>`
-2. `configs/shared/brew/Brewfile-<host>-<username>`
-3. `configs/<os>/brew/Brewfile-shared-<username>`
-4. `configs/<os>/brew/Brewfile-<host>-<username>`
+1. `configs/shared/brew/Brewfile-shared-shared`
+2. `configs/shared/brew/Brewfile-shared-<username>`
+3. `configs/shared/brew/Brewfile-<host>-shared`
+4. `configs/shared/brew/Brewfile-<host>-<username>`
+5. `configs/<os>/brew/Brewfile-shared-shared`
+6. `configs/<os>/brew/Brewfile-shared-<username>`
+7. `configs/<os>/brew/Brewfile-<host>-shared`
+8. `configs/<os>/brew/Brewfile-<host>-<username>`
 
 This order is intentional:
 
@@ -435,12 +453,20 @@ Important current limitation:
 
 `scripts/macos/system/system-configure` currently:
 
-1. detects repo root and current host
+1. detects repo root, current host, and current username
 2. requires macOS and the needed system commands
-3. resolves `configs/macos/system/system-settings-<host>.conf` first when present
-4. falls back to `configs/macos/system/system-settings-shared.conf`
+3. resolves all matching layered system config files in this order:
+   - `configs/shared/system/system-shared-shared.conf`
+   - `configs/shared/system/system-shared-<username>.conf`
+   - `configs/shared/system/system-<host>-shared.conf`
+   - `configs/shared/system/system-<host>-<username>.conf`
+   - `configs/macos/system/system-shared-shared.conf`
+   - `configs/macos/system/system-shared-<username>.conf`
+   - `configs/macos/system/system-<host>-shared.conf`
+   - `configs/macos/system/system-<host>-<username>.conf`
 5. applies Dock auto-hide and Spaces ordering only when values differ
 6. restarts the Dock only when Dock settings changed
 7. applies AC power sleep with `pmset` only when needed
 8. uses `pmset -c` on portable Macs and `pmset -a` on non-portable Macs
-9. logs each managed setting change to the shared per-host CSV activity log
+9. validates the final merged config after all matching layers load
+10. logs each managed setting change to the shared per-host CSV activity log

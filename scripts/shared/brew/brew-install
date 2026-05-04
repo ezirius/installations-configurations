@@ -2,16 +2,21 @@
 # Shared Homebrew installer.
 #
 # This script resolves layered Brewfiles from:
+# - configs/shared/brew/Brewfile-shared-shared
 # - configs/shared/brew/Brewfile-shared-<username>
+# - configs/shared/brew/Brewfile-<host>-shared
 # - configs/shared/brew/Brewfile-<host>-<username>
+# - configs/<os>/brew/Brewfile-shared-shared
 # - configs/<os>/brew/Brewfile-shared-<username>
+# - configs/<os>/brew/Brewfile-<host>-shared
 # - configs/<os>/brew/Brewfile-<host>-<username>
 #
 # Matching order is least specific to most specific:
-# 1. shared OS + shared host
-# 2. shared OS + current host
-# 3. current OS + shared host
-# 4. current OS + current host
+# 1. shared.shared
+# 2. shared.x
+# 3. x.shared
+# 4. x.x
+# within the shared OS scope, then the concrete OS scope.
 #
 # It installs only missing entries. Already installed formulae and casks are
 # reported and skipped. It does not run `brew update` or upgrade installed
@@ -33,14 +38,18 @@ Brewfile naming:
   Brewfile-<host>-<username>
 
 Resolution order:
-  1. configs/shared/brew/Brewfile-shared-<username>
-  2. configs/shared/brew/Brewfile-<host>-<username>
-  3. configs/<os>/brew/Brewfile-shared-<username>
-  4. configs/<os>/brew/Brewfile-<host>-<username>
+  1. configs/shared/brew/Brewfile-shared-shared
+  2. configs/shared/brew/Brewfile-shared-<username>
+  3. configs/shared/brew/Brewfile-<host>-shared
+  4. configs/shared/brew/Brewfile-<host>-<username>
+  5. configs/<os>/brew/Brewfile-shared-shared
+  6. configs/<os>/brew/Brewfile-shared-<username>
+  7. configs/<os>/brew/Brewfile-<host>-shared
+  8. configs/<os>/brew/Brewfile-<host>-<username>
 
 Notes:
-  - <host> is either 'shared' or the normalised current hostname.
-  - <username> is the normalised current whoami value.
+  - <host> and <username> each support 'shared'.
+  - concrete host and username values are normalised from the current machine.
   - Only missing entries are installed. Installed entries are skipped.
   - This command does not run brew update or upgrade installed entries."
 }
@@ -323,12 +332,16 @@ resolve_brewfiles() {
   local host_name="$3"
   local user_name="$4"
 
-  # Load every matching layer so shared files provide a baseline and
-  # host-specific files can add entries on top.
+  # Load every matching layer from least specific to most specific so shared
+  # Brewfiles provide the additive baseline before more specific layers.
   BREWFILES=()
+  add_candidate_if_present "$root_path/configs/shared/brew/Brewfile-shared-shared"
   add_candidate_if_present "$root_path/configs/shared/brew/Brewfile-shared-$user_name"
+  add_candidate_if_present "$root_path/configs/shared/brew/Brewfile-$host_name-shared"
   add_candidate_if_present "$root_path/configs/shared/brew/Brewfile-$host_name-$user_name"
+  add_candidate_if_present "$root_path/configs/$os_name/brew/Brewfile-shared-shared"
   add_candidate_if_present "$root_path/configs/$os_name/brew/Brewfile-shared-$user_name"
+  add_candidate_if_present "$root_path/configs/$os_name/brew/Brewfile-$host_name-shared"
   add_candidate_if_present "$root_path/configs/$os_name/brew/Brewfile-$host_name-$user_name"
 
   if [[ ${#BREWFILES[@]} -eq 0 ]]; then
@@ -408,16 +421,67 @@ installed_entry_version() {
   printf '%s\n' "$version_name"
 }
 
-# Print the config-backed Local Network warning for apps that need manual macOS
-# approval after Homebrew setup completes.
-print_local_network_warning() {
-  local app_name
+# Look up the display name for one configured Local Network warning token.
+warning_display_name_for_token() {
+  local token_name="$1"
+  local mapping
+  local mapping_token
+  local mapping_display
+
+  IFS=',' read -r -a WARNING_MAPPINGS <<< "$LOCAL_NETWORK_WARNING_ITEMS"
+  for mapping in "${WARNING_MAPPINGS[@]}"; do
+    mapping_token="${mapping%%:*}"
+    mapping_display="${mapping#*:}"
+    if [[ "$mapping_token" == "$mapping" || -z "$mapping_display" ]]; then
+      fail "Invalid LOCAL_NETWORK_WARNING_ITEMS entry: $mapping"
+    fi
+
+    if [[ "$mapping_token" == "$token_name" ]]; then
+      printf '%s\n' "$mapping_display"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Mark one matched installed token for Local Network warning output once.
+mark_local_network_warning_item_if_configured() {
+  local token_name="$1"
+  local display_name
+  local warning_entry
+
+  if ! display_name="$(warning_display_name_for_token "$token_name")"; then
+    return 0
+  fi
+
+  warning_entry="$token_name|$display_name"
+  case $'\n'"$LOCAL_NETWORK_WARNING_MATCHES"$'\n' in
+    *$'\n'"$warning_entry"$'\n'*)
+      return 0
+      ;;
+  esac
+
+  if [[ -n "$LOCAL_NETWORK_WARNING_MATCHES" ]]; then
+    LOCAL_NETWORK_WARNING_MATCHES+=$'\n'
+  fi
+  LOCAL_NETWORK_WARNING_MATCHES+="$warning_entry"
+}
+
+# Print the config-backed Local Network warning for matched managed items that
+# are already installed or were installed by this run.
+print_local_network_warning_if_needed() {
+  local warning_entry
+  local display_name
+
+  [[ -n "$LOCAL_NETWORK_WARNING_MATCHES" ]] || return 0
 
   print_warning "$LOCAL_NETWORK_WARNING_TITLE"
-  while IFS= read -r app_name || [[ -n "$app_name" ]]; do
-    [[ -n "$app_name" ]] || continue
-    print_warning "Enable Local Network access for: $app_name"
-  done <<< "$LOCAL_NETWORK_WARNING_APPS"
+  while IFS= read -r warning_entry || [[ -n "$warning_entry" ]]; do
+    [[ -n "$warning_entry" ]] || continue
+    display_name="${warning_entry#*|}"
+    print_warning "Enable Local Network access for: $display_name"
+  done <<< "$LOCAL_NETWORK_WARNING_MATCHES"
 }
 
 # Read the current Homebrew version token, returning an empty value when it
@@ -483,6 +547,7 @@ install_missing_entry() {
   local version_name
 
   if entry_is_installed "$entry_type" "$entry_name"; then
+    mark_local_network_warning_item_if_configured "$entry_name"
     print_skip "Skipping installed $entry_type: $entry_name"
     return 0
   fi
@@ -495,6 +560,7 @@ install_missing_entry() {
 
   version_name="$(installed_entry_version "$entry_type" "$entry_name")"
   append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_INSTALLED" "$entry_name" "$version_name"
+  mark_local_network_warning_item_if_configured "$entry_name"
   print_green "Installed $entry_type: $entry_name"
 }
 
@@ -515,17 +581,23 @@ process_brewfile() {
     return "$status"
   fi
 
-  if (
-    exec 3< "$entries_file"
+  if exec 3< "$entries_file"; then
+    :
+  else
+    status=$?
+    rm -f "$entries_file"
+    return "$status"
+  fi
 
-    while IFS='|' read -r entry_type entry_name <&3; do
-      [[ -n "$entry_name" ]] || continue
-      install_missing_entry "$entry_type" "$entry_name"
-    done
-  ); then
+  if while IFS='|' read -r entry_type entry_name <&3; do
+    [[ -n "$entry_name" ]] || continue
+    install_missing_entry "$entry_type" "$entry_name"
+  done; then
+    exec 3<&-
     rm -f "$entries_file"
   else
     status=$?
+    exec 3<&-
     rm -f "$entries_file"
     return "$status"
   fi
@@ -553,15 +625,16 @@ main() {
   clear_config_values \
     'HOMEBREW_INSTALL_URL' \
     'LOCAL_NETWORK_WARNING_TITLE' \
-    'LOCAL_NETWORK_WARNING_APPS'
-  load_required_config "$root_path" 'configs/shared/brew/brew-install-shared.conf'
+    'LOCAL_NETWORK_WARNING_ITEMS'
+  load_required_config "$root_path" 'configs/shared/brew/brew-install.conf'
   require_config_value 'HOMEBREW_INSTALL_URL'
   require_config_value 'LOCAL_NETWORK_WARNING_TITLE'
-  require_config_value 'LOCAL_NETWORK_WARNING_APPS'
+  require_config_value 'LOCAL_NETWORK_WARNING_ITEMS'
   os_name="$(detect_os)"
   host_name="$(detect_host)"
   user_name="$(detect_username)"
   BREWFILES=()
+  LOCAL_NETWORK_WARNING_MATCHES=''
   LOG_HOST_NAME="$host_name"
   LOG_FILE_PATH="$(activity_log_file_path "$root_path" "$os_name" "$host_name")"
 
@@ -582,7 +655,7 @@ main() {
     process_brewfile "$brewfile_path"
   done
 
-  print_local_network_warning
+  print_local_network_warning_if_needed
   print_green 'Done'
 }
 

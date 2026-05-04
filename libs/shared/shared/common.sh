@@ -115,7 +115,7 @@ load_shared_logging_config() {
     'ACTION_INSTALLED' \
     'ACTION_UPDATED' \
     'ACTION_REMOVED'
-  load_required_config "$root_path" 'configs/shared/shared/logging-shared.conf'
+  load_required_config "$root_path" 'configs/shared/shared/logging.conf'
   require_config_value 'ACTIVITY_LOG_TIMEZONE'
   require_config_value 'ACTIVITY_LOG_ROOT_RELATIVE'
   require_config_value 'ACTIVITY_LOG_SCOPE_SUBDIR'
