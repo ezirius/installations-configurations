@@ -28,7 +28,7 @@
 # cask "ghostty"
 # cask "tailscale-app"
 
-# cask "brave-browser"
+cask "brave-browser"
 # cask "element"
 # cask "home-assistant"
 # cask "multipass"
