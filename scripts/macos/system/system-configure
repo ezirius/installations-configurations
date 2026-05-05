@@ -304,7 +304,7 @@ validate_time_zone_value() {
   local listed_zones
 
   [[ -n "$zone_name" ]] || fail 'TIME_ZONE must not be empty'
-  listed_zones="$(systemsetup -listtimezones 2>/dev/null || true)"
+  listed_zones="$(sudo systemsetup -listtimezones 2>/dev/null || true)"
   printf '%s\n' "$listed_zones" | grep -Fx -- "$zone_name" >/dev/null 2>&1 || fail "Invalid TIME_ZONE value: $zone_name"
 }
 
@@ -353,7 +353,7 @@ current_time_zone_auto_by_location_enabled() {
 current_time_zone() {
   local status_output
 
-  status_output="$(systemsetup -gettimezone 2>/dev/null || true)"
+  status_output="$(sudo systemsetup -gettimezone 2>/dev/null || true)"
   printf '%s\n' "${status_output#Time Zone: }"
 }
 
