@@ -26,7 +26,7 @@
 
 # Apps
 # cask "ghostty"
-# cask "tailscale-app"
+cask "tailscale-app"
 
 cask "brave-browser"
 cask "element"
