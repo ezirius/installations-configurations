@@ -425,8 +425,8 @@ Behaviour:
 17. Validate the final merged config after all matching layers load.
 18. Append one `Configured` CSV row for each managed setting that actually changes.
 
-In the current first SSH management pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
-Other or multiple SSH allow-user values are currently unsupported.
+In the current first SSH management pass, `SSHD_ALLOW_USERS` must contain exactly one username.
+Multiple SSH allow-user values are currently unsupported.
 
 The system workflow treats `~/.ssh/authorized_keys.d/` as the repo-managed SSH key directory.
 Configured `.pub` files are deployed there using their exact filenames.

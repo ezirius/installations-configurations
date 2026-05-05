@@ -54,6 +54,14 @@ contains_distinct_word() {
   return 1
 }
 
+ssh_allowed_user_name() {
+  if [[ -n "${SSHD_ALLOW_USERS:-}" ]]; then
+    printf '%s\n' "${SSHD_ALLOW_USERS%% *}"
+  else
+    printf '%s\n' "$CURRENT_USER_NAME"
+  fi
+}
+
 contains_pub_file_name() {
   [[ "$1" == *.pub ]]
 }
@@ -607,7 +615,7 @@ apply_ssh_settings() {
   local sshd_config_changed='1'
   local authorized_keys_changed='1'
 
-  user_home="$(user_home_directory 'ezirius')"
+  user_home="$(user_home_directory "$(ssh_allowed_user_name)")"
   sshd_config_path="$(managed_sshd_config_path)"
 
   if [[ "$SSH_REMOTE_LOGIN_ENABLED" == 'false' ]]; then
@@ -827,7 +835,7 @@ validate_config() {
 
   if [[ "${SSH_REMOTE_LOGIN_ENABLED:-false}" == 'true' ]]; then
     [[ -n "${SSHD_ALLOW_USERS:-}" ]] || fail 'SSHD_ALLOW_USERS must be set when SSH_REMOTE_LOGIN_ENABLED is true'
-    [[ "$SSHD_ALLOW_USERS" == 'ezirius' ]] || fail 'SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true'
+    [[ "$SSHD_ALLOW_USERS" != *' '* ]] || fail 'SSHD_ALLOW_USERS must contain exactly one username when SSH_REMOTE_LOGIN_ENABLED is true'
     [[ -n "${SSHD_LOGIN_KEY_FILES:-}" ]] || fail 'SSHD_LOGIN_KEY_FILES must be set when SSH_REMOTE_LOGIN_ENABLED is true'
     for key_file_name in $SSHD_LOGIN_KEY_FILES; do
       validate_safe_file_name 'SSHD_LOGIN_KEY_FILES entry' "$key_file_name"
@@ -870,6 +878,7 @@ main() {
   os_name="$(detect_os)"
   host_name="$(detect_host)"
   user_name="$(detect_username)"
+  CURRENT_USER_NAME="$user_name"
   resolve_system_configs "$root_path" "$os_name" "$host_name" "$user_name"
   DOCK_CHANGED='0'
   LOG_HOST_NAME="$host_name"

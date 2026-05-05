@@ -1056,7 +1056,7 @@ test_removes_non_ed25519_host_keys_even_when_ssh_is_disabled() {
   assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-host-keys,' 'logs host key pruning changes'
 }
 
-test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius() {
+test_ssh_enabled_requires_single_allowed_user() {
   local temp_dir
   local output_file
 
@@ -1070,14 +1070,13 @@ test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius() {
   write_shared_shared_config "$temp_dir"
   write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
   write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
-SSHD_ALLOW_USERS="otheruser"
 SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
 
   if run_in_fake_repo "$temp_dir" "$output_file"; then
-    fail 'system-configure should require SSHD_ALLOW_USERS to equal ezirius when SSH is enabled'
+    fail 'system-configure should require SSHD_ALLOW_USERS to contain exactly one username when SSH is enabled'
   fi
 
-  assert_contains "$output_file" 'ERROR: SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH does not equal ezirius'
+  assert_contains "$output_file" 'ERROR: SSHD_ALLOW_USERS must be set when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH allow-users value is missing'
 }
 
 test_ssh_enabled_rejects_multiple_allowed_users_in_first_pass() {
@@ -1101,7 +1100,45 @@ SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
     fail 'system-configure should reject multiple allowed users in the first SSH management pass'
   fi
 
-  assert_contains "$output_file" 'ERROR: SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH allows more than ezirius in the first pass'
+  assert_contains "$output_file" 'ERROR: SSHD_ALLOW_USERS must contain exactly one username when SSH_REMOTE_LOGIN_ENABLED is true' 'fails clearly when enabled SSH allows multiple usernames in the first pass'
+}
+
+test_ssh_enabled_supports_any_single_allowed_user() {
+  local temp_dir
+  local output_file
+  local sshd_config_path
+  local authorized_keys_dir
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
+  authorized_keys_dir="$temp_dir/home/otheruser/.ssh/authorized_keys.d"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/pmset.log"
+  : > "$temp_dir/state/sudo.log"
+  : > "$temp_dir/state/killall.log"
+  : > "$temp_dir/state/systemsetup.log"
+  : > "$temp_dir/state/sshd.log"
+  : > "$temp_dir/state/launchctl.log"
+  : > "$temp_dir/state/ssh-keygen.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_shared_shared_config "$temp_dir"
+  write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=true
+SSHD_ALLOW_USERS="otheruser"
+SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
+
+  if ! TEST_REMOTE_LOGIN_CURRENT=Off TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should support any single allowed SSH username'
+  fi
+
+  assert_contains "$sshd_config_path" 'AllowUsers otheruser' 'renders AllowUsers for the configured single username'
+  assert_contains "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'deploys managed SSH keys into the configured user home directory'
 }
 
 test_ssh_enabled_requires_sshd_login_key_files() {
@@ -1410,8 +1447,9 @@ test_rejects_invalid_time_zone_value
 test_generates_missing_ed25519_host_key
 test_fails_clearly_when_ed25519_host_key_generation_does_not_produce_key
 test_removes_non_ed25519_host_keys_even_when_ssh_is_disabled
-test_ssh_enabled_requires_sshd_allow_users_to_equal_ezirius
+test_ssh_enabled_requires_single_allowed_user
 test_ssh_enabled_rejects_multiple_allowed_users_in_first_pass
+test_ssh_enabled_supports_any_single_allowed_user
 test_ssh_enabled_requires_sshd_login_key_files
 test_ssh_enabled_deploys_maldoria_keys_with_exact_pub_filenames
 test_ssh_enabled_deploys_maravyn_keys_with_exact_pub_filenames
