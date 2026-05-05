@@ -221,7 +221,7 @@ case "$1" in
     printf "Time Zone: %s\n" "${TEST_TIME_ZONE_CURRENT:-UTC}"
     ;;
   -listtimezones)
-    printf "%s\n" "UTC" "Africa/Johannesburg" "America/New_York"
+    printf "%s\n" "UTC" " Africa/Johannesburg" "America/New_York"
     ;;
   -settimezone)
     :

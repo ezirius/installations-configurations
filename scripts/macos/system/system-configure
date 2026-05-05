@@ -305,7 +305,7 @@ validate_time_zone_value() {
 
   [[ -n "$zone_name" ]] || fail 'TIME_ZONE must not be empty'
   listed_zones="$(sudo systemsetup -listtimezones 2>/dev/null || true)"
-  printf '%s\n' "$listed_zones" | grep -Fx -- "$zone_name" >/dev/null 2>&1 || fail "Invalid TIME_ZONE value: $zone_name"
+  printf '%s\n' "$listed_zones" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -Fx -- "$zone_name" >/dev/null 2>&1 || fail "Invalid TIME_ZONE value: $zone_name"
 }
 
 repo_ssh_keys_dir_path() {
