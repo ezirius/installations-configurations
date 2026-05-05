@@ -72,6 +72,7 @@ make_fake_repo() {
   cp "$ROOT/libs/shared/shared/common.sh" "$temp_dir/libs/shared/shared/common.sh"
   cp "$ROOT/configs/shared/shared/logging.conf" "$temp_dir/configs/shared/shared/logging.conf"
   chmod +x "$temp_dir/scripts/macos/system/system-configure"
+  write_system_support_config "$temp_dir"
 }
 
 write_command_stub() {
@@ -116,21 +117,44 @@ printf "%s\n" "$*" >> "$STATE_DIR/defaults.log"
 
 case "$1" in
   read)
-    case "$3" in
-      autohide)
-        if [[ "${TEST_DEFAULTS_AUTO_HIDE_MISSING:-0}" == "1" ]]; then
-          exit 1
-        fi
-        printf "%s\n" "${TEST_DEFAULTS_AUTO_HIDE_CURRENT:-0}"
-        ;;
-      mru-spaces)
-        if [[ "${TEST_DEFAULTS_MRU_SPACES_MISSING:-0}" == "1" ]]; then
-          exit 1
-        fi
-        printf "%s\n" "${TEST_DEFAULTS_MRU_SPACES_CURRENT:-0}"
-        ;;
-      *) exit 1 ;;
-    esac
+    if [[ "$2" == "-g" ]]; then
+      case "$3" in
+        AppleICUForce24HourTime)
+          if [[ "${TEST_DEFAULTS_24_HOUR_MISSING:-0}" == "1" ]]; then
+            exit 1
+          fi
+          printf "%s\n" "${TEST_DEFAULTS_24_HOUR_CURRENT:-0}"
+          ;;
+        AppleICUForce12HourTime)
+          if [[ "${TEST_DEFAULTS_12_HOUR_MISSING:-0}" == "1" ]]; then
+            exit 1
+          fi
+          printf "%s\n" "${TEST_DEFAULTS_12_HOUR_CURRENT:-1}"
+          ;;
+        *) exit 1 ;;
+      esac
+    elif [[ "$2" == "/Library/Preferences/com.apple.timezone.auto" && "$3" == "Active" ]]; then
+      if [[ "${TEST_TIME_ZONE_AUTO_MISSING:-0}" == "1" ]]; then
+        exit 1
+      fi
+      printf "%s\n" "${TEST_TIME_ZONE_AUTO_CURRENT:-1}"
+    else
+      case "$3" in
+        autohide)
+          if [[ "${TEST_DEFAULTS_AUTO_HIDE_MISSING:-0}" == "1" ]]; then
+            exit 1
+          fi
+          printf "%s\n" "${TEST_DEFAULTS_AUTO_HIDE_CURRENT:-0}"
+          ;;
+        mru-spaces)
+          if [[ "${TEST_DEFAULTS_MRU_SPACES_MISSING:-0}" == "1" ]]; then
+            exit 1
+          fi
+          printf "%s\n" "${TEST_DEFAULTS_MRU_SPACES_CURRENT:-0}"
+          ;;
+        *) exit 1 ;;
+      esac
+    fi
     ;;
   write)
     :
@@ -193,6 +217,15 @@ STATE_DIR="${TEST_STATE_DIR:?}"
 printf "%s\n" "$*" >> "$STATE_DIR/systemsetup.log"
 
 case "$1" in
+  -gettimezone)
+    printf "Time Zone: %s\n" "${TEST_TIME_ZONE_CURRENT:-UTC}"
+    ;;
+  -listtimezones)
+    printf "%s\n" "UTC" "Africa/Johannesburg" "America/New_York"
+    ;;
+  -settimezone)
+    :
+    ;;
   -getremotelogin)
     printf "Remote Login: %s\n" "${TEST_REMOTE_LOGIN_CURRENT:-Off}"
     ;;
@@ -280,6 +313,14 @@ write_shared_shared_config() {
 DOCK_AUTO_HIDE=true
 DOCK_REORDER_SPACES_BY_RECENT_USE=false
 AC_POWER_SYSTEM_SLEEP_MINUTES=0
+EOF
+}
+
+write_system_support_config() {
+  local temp_dir="$1"
+
+  cat > "$temp_dir/configs/shared/system/system-configure.conf" <<EOF
+# Shared runtime support config for scripts/macos/system/system-configure.
 SYSTEM_DOCK_DOMAIN="com.apple.dock"
 SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
 SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
@@ -289,9 +330,9 @@ SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
 SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
 SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
 SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
-SSH_REMOTE_LOGIN_ENABLED=false
-SSHD_ALLOW_USERS=""
-SSHD_LOGIN_KEY_FILES=""
+SYSTEM_TIME_ZONE_AUTO_LOG_TOKEN="system-timezone-auto"
+SYSTEM_TIME_ZONE_LOG_TOKEN="system-timezone"
+SYSTEM_CLOCK_24_HOUR_LOG_TOKEN="system-clock-24-hour"
 SSHD_PASSWORD_AUTHENTICATION=false
 SSHD_KBD_INTERACTIVE_AUTHENTICATION=false
 SSHD_CHALLENGE_RESPONSE_AUTHENTICATION=false
@@ -475,11 +516,14 @@ test_fails_when_no_matching_system_config_layers_exist() {
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
 
-  if run_in_fake_repo "$temp_dir" "$output_file"; then
-    fail 'system-configure should fail when no matching layered config files exist'
+  if ! run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should succeed when no optional layered config files match'
   fi
 
-  assert_contains "$output_file" 'ERROR: No matching system config files found for os=macos host=maldoria username=ezirius' 'system-configure should fail clearly when no layered config files match'
+  assert_not_contains "$output_file" 'Applying Dock settings' 'system-configure should skip Dock management when no optional settings are configured'
+  assert_not_contains "$output_file" 'Applying power settings' 'system-configure should skip power management when no optional settings are configured'
+  assert_not_contains "$output_file" 'Applying SSH settings' 'system-configure should skip SSH management when no optional settings are configured'
 }
 
 test_requires_system_config_values_from_final_layered_config() {
@@ -494,11 +538,8 @@ test_requires_system_config_values_from_final_layered_config() {
   make_fake_repo "$temp_dir"
   setup_common_stubs "$temp_dir"
 
-  cat > "$temp_dir/configs/shared/system/system-shared-shared.conf" <<'EOF'
-# Shared system settings for all OS scopes, hosts, and usernames.
-DOCK_AUTO_HIDE=true
-DOCK_REORDER_SPACES_BY_RECENT_USE=false
-AC_POWER_SYSTEM_SLEEP_MINUTES=0
+  cat > "$temp_dir/configs/shared/system/system-configure.conf" <<EOF
+# Shared runtime support config for scripts/macos/system/system-configure.
 SYSTEM_DOCK_DOMAIN="com.apple.dock"
 SYSTEM_DOCK_AUTO_HIDE_KEY="autohide"
 SYSTEM_DOCK_REORDER_SPACES_KEY="mru-spaces"
@@ -507,13 +548,33 @@ SYSTEM_PMSET_AC_POWER_SECTION="AC Power"
 SYSTEM_PMSET_SLEEP_LOG_TOKEN="system-pmset-sleep"
 SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE="-c"
 SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE="-a"
+SSHD_PASSWORD_AUTHENTICATION=false
+SSHD_KBD_INTERACTIVE_AUTHENTICATION=false
+SSHD_CHALLENGE_RESPONSE_AUTHENTICATION=false
+SSHD_PERMIT_ROOT_LOGIN=false
+SSHD_PUBKEY_AUTHENTICATION=true
+SSHD_X11_FORWARDING=false
+SSHD_ALLOW_TCP_FORWARDING=false
+SSHD_ALLOW_AGENT_FORWARDING=false
+SYSTEM_REMOTE_LOGIN_LOG_TOKEN="system-remote-login"
+SYSTEM_SSHD_CONFIG_LOG_TOKEN="system-sshd-config"
+SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN="system-sshd-authorized-key"
+SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN="system-sshd-host-keys"
+SYSTEM_SSHD_CONFIG_DIR="$temp_dir/state/etc/ssh/sshd_config.d"
+SYSTEM_SSHD_MANAGED_FILE_NAME="90-installations-and-configurations.conf"
+SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME="authorized_keys.d"
+SYSTEM_SSHD_HOST_ED25519_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ed25519_key"
+SYSTEM_SSHD_HOST_RSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_rsa_key"
+SYSTEM_SSHD_HOST_ECDSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ecdsa_key"
 EOF
 
-  if SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN='system-dock-autohide' run_in_fake_repo "$temp_dir" "$output_file"; then
-    fail 'system-configure should fail when a required layered config value is missing even if exported in the environment'
+  write_shared_shared_config "$temp_dir"
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should fail when a required support config value is missing even if exported in the environment'
   fi
 
-  assert_contains "$output_file" 'ERROR: SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config' 'system-configure should require managed values to come from layered config files themselves'
+  assert_contains "$output_file" 'ERROR: Required config value is not set: SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN' 'system-configure should require support values to come from system-configure.conf itself'
 }
 
 test_rejects_invalid_sleep_minutes_before_applying_changes() {
@@ -786,6 +847,105 @@ test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbatter
   assert_contains "$temp_dir/state/sudo.log" '-v' 'validates sudo before portable pmset change'
   assert_contains "$temp_dir/state/pmset.log" '-c sleep 0' 'uses portable pmset scope when battery power is reported without the InternalBattery token'
   assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-pmset-sleep,' 'logs the portable sleep change'
+}
+
+test_disables_time_zone_auto_by_location_when_enabled() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'TIME_ZONE_AUTO_BY_LOCATION=false'
+
+  if ! TEST_TIME_ZONE_AUTO_CURRENT=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should disable automatic time zone selection when configured and currently enabled'
+  fi
+
+  assert_contains "$temp_dir/state/sudo.log" 'defaults write /Library/Preferences/com.apple.timezone.auto Active -bool false' 'disables automatic time zone by location when configured'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-timezone-auto,' 'logs the automatic time zone change'
+}
+
+test_sets_time_zone_when_different() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/systemsetup.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'TIME_ZONE="Africa/Johannesburg"'
+
+  if ! TEST_TIME_ZONE_CURRENT='UTC' run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should set the configured timezone when it differs from the current machine state'
+  fi
+
+  assert_contains "$temp_dir/state/systemsetup.log" '-settimezone Africa/Johannesburg' 'sets the configured timezone when it differs'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-timezone,' 'logs the timezone change'
+}
+
+test_enables_24_hour_clock_when_disabled() {
+  local temp_dir
+  local output_file
+  local log_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/defaults.log"
+  : > "$temp_dir/state/killall.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'CLOCK_24_HOUR=true'
+
+  if ! TEST_DEFAULTS_24_HOUR_CURRENT=0 TEST_DEFAULTS_12_HOUR_CURRENT=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'system-configure should enable the 24-hour clock when configured and currently disabled'
+  fi
+
+  assert_contains "$temp_dir/state/defaults.log" 'write -g AppleICUForce24HourTime -bool true' 'enables the 24-hour clock preference when configured'
+  assert_contains "$temp_dir/state/defaults.log" 'write -g AppleICUForce12HourTime -bool false' 'disables the 12-hour clock preference when enabling 24-hour time'
+  assert_contains "$temp_dir/state/killall.log" 'cfprefsd' 'restarts cfprefsd after changing the 24-hour clock preference'
+  assert_contains "$temp_dir/state/killall.log" 'SystemUIServer' 'restarts SystemUIServer after changing the 24-hour clock preference'
+  assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-clock-24-hour,' 'logs the 24-hour clock change'
+}
+
+test_rejects_invalid_time_zone_value() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'TIME_ZONE="Mars/Phobos"'
+
+  if run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'system-configure should reject invalid timezone values before applying changes'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Invalid TIME_ZONE value: Mars/Phobos' 'fails clearly when an invalid timezone is configured'
 }
 
 test_generates_missing_ed25519_host_key() {
@@ -1151,6 +1311,7 @@ test_ssh_disabled_removes_managed_files() {
   setup_common_stubs "$temp_dir"
   write_shared_shared_config "$temp_dir"
   write_repo_ssh_key "$temp_dir" 'maldoria-ipirus-ezirius-login.pub' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t'
+  write_macos_host_user_override "$temp_dir" 'maldoria' 'ezirius' 'SSH_REMOTE_LOGIN_ENABLED=false'
 
   if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
@@ -1216,12 +1377,13 @@ EOF
   fi
 
   assert_not_contains "$temp_dir/state/launchctl.log" 'kickstart -k system/com.openssh.sshd' 'does not reload sshd when only managed key content changes'
+  assert_not_contains "$temp_dir/state/systemsetup.log" '-setremotelogin on' 'does not re-enable Remote Login when it is already enabled'
 }
 
 test_documentation_headers() {
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-configure.conf" 'shared system support config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/system/system-shared-shared.conf" 'shared shared system config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/shared/system/system-maldoria-shared.conf" 'shared host system config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/shared/system/system-maravyn-shared.conf" 'second shared host system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/macos/system/system-maldoria-shared.conf" 'host-shared macOS system config should start with a header comment'
   assert_starts_with_comment "$ROOT/scripts/macos/system/system-configure" 'system script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/tests/shared/system/test-system-configure.sh" 'system test should start with a header comment after shebang'
 }
@@ -1241,6 +1403,10 @@ test_applies_non_portable_sleep_change_with_a_scope
 test_partial_override_files_inherit_required_values_from_baseline
 test_skips_dock_restart_when_dock_settings_are_already_correct
 test_uses_portable_scope_when_pmset_reports_battery_power_without_internalbattery_token
+test_disables_time_zone_auto_by_location_when_enabled
+test_sets_time_zone_when_different
+test_enables_24_hour_clock_when_disabled
+test_rejects_invalid_time_zone_value
 test_generates_missing_ed25519_host_key
 test_fails_clearly_when_ed25519_host_key_generation_does_not_produce_key
 test_removes_non_ed25519_host_keys_even_when_ssh_is_disabled

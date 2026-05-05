@@ -118,6 +118,8 @@ write_catalog_sample() {
               <string>25E253</string>
               <key>FirmwareURL</key>
               <string>https://updates.cdn-apple.com/2026Spring/fullrestores/111-11111/AAAA/UniversalMac_26.4.1_25E253_Restore.ipsw</string>
+              <key>FirmwareSHA1</key>
+              <string>383aba2f915c41b589f6ebca691e6f0618a46e43</string>
               <key>ProductVersion</key>
               <string>26.4.1</string>
             </dict>
@@ -133,6 +135,8 @@ write_catalog_sample() {
               <string>25E253</string>
               <key>FirmwareURL</key>
               <string>https://updates.cdn-apple.com/2026Spring/fullrestores/111-11111/AAAA/UniversalMac_26.4.1_25E253_Restore.ipsw</string>
+              <key>FirmwareSHA1</key>
+              <string>383aba2f915c41b589f6ebca691e6f0618a46e43</string>
               <key>ProductVersion</key>
               <string>26.4.1</string>
             </dict>
@@ -148,6 +152,8 @@ write_catalog_sample() {
               <string>25D125</string>
               <key>FirmwareURL</key>
               <string>https://updates.cdn-apple.com/2026Winter/fullrestores/122-22222/BBBB/UniversalMac_26.3_25D125_Restore.ipsw</string>
+              <key>FirmwareSHA1</key>
+              <string>f920b5f72f6e4a11480ff4e74414d2d7bc3c7f6b</string>
               <key>ProductVersion</key>
               <string>26.3</string>
             </dict>
@@ -905,6 +911,66 @@ EOF
   assert_contains "$output_file" 'ERROR: Required config value is not set: MACOS_DOWNLOAD_DIR_RELATIVE' 'download workflow should require config values to come from the config file itself'
 }
 
+test_rejects_absolute_download_dir() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_download_config "$temp_dir" '/tmp/downloads'
+  mkdir -p "$temp_dir/state"
+
+  if TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
+    fail 'macos-download should reject absolute download directories'
+  fi
+
+  assert_contains "$output_file" 'ERROR: MACOS_DOWNLOAD_DIR_RELATIVE must be a relative path' 'download workflow should reject absolute download directories'
+}
+
+test_rejects_parent_traversal_download_dir() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_download_config "$temp_dir" '../downloads'
+  mkdir -p "$temp_dir/state"
+
+  if TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
+    fail 'macos-download should reject parent traversal download directories'
+  fi
+
+  assert_contains "$output_file" 'ERROR: MACOS_DOWNLOAD_DIR_RELATIVE must not contain .. path traversal' 'download workflow should reject parent traversal download directories'
+}
+
+test_rejects_nested_parent_traversal_download_dir() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  write_download_config "$temp_dir" 'downloads/../../tmp'
+  mkdir -p "$temp_dir/state"
+
+  if TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
+    fail 'macos-download should reject nested parent traversal download directories'
+  fi
+
+  assert_contains "$output_file" 'ERROR: MACOS_DOWNLOAD_DIR_RELATIVE must not contain .. path traversal' 'download workflow should reject nested parent traversal download directories'
+}
+
 test_fails_clearly_when_installer_listing_is_unparseable() {
   local temp_dir
   local output_file
@@ -989,6 +1055,87 @@ exit 1'
   fi
 }
 
+test_verifies_ipsw_checksum_against_catalog_sha1() {
+  local temp_dir
+  local output_file
+  local listing_file
+  local catalog_file
+  local selector
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  listing_file="$temp_dir/listing.log"
+  catalog_file="$temp_dir/catalog.xml"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  write_catalog_sample "$catalog_file"
+  setup_common_stubs "$temp_dir"
+  write_download_config "$temp_dir" 'ipsw-downloads'
+  mkdir -p "$temp_dir/state"
+
+  if ! printf 'q\n' | TEST_CATALOG_FILE="$catalog_file" TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$listing_file" 2>&1; then
+    cat "$listing_file" >&2
+    fail 'macos-download should allow listing IPSW choices before checksum verification selection'
+  fi
+
+  selector="$(selector_for_output_line "$listing_file" '^[0-9]+\. 26\.4\.1 \(25E253\) \| IPSW \| Apple Silicon Mac restore image \| Download available$')"
+
+  if ! printf '%s\n' "$selector" | TEST_CATALOG_FILE="$catalog_file" TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
+    cat "$output_file" >&2
+    fail 'macos-download should verify a selected IPSW against the Apple catalog SHA-1'
+  fi
+
+  assert_contains "$output_file" 'Downloaded 26.4.1 (25E253)' 'reports successful IPSW download after checksum verification'
+}
+
+test_fails_clearly_when_ipsw_checksum_mismatches() {
+  local temp_dir
+  local output_file
+  local listing_file
+  local catalog_file
+  local selector
+  local download_target
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  listing_file="$temp_dir/listing.log"
+  catalog_file="$temp_dir/catalog.xml"
+  download_target="$temp_dir/ipsw-downloads/26.4.1-25E253.ipsw"
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  write_catalog_sample "$catalog_file"
+  setup_common_stubs "$temp_dir"
+  write_download_config "$temp_dir" 'ipsw-downloads'
+  mkdir -p "$temp_dir/state"
+
+  python3 - "$catalog_file" <<'PY'
+import sys
+
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as handle:
+    data = handle.read()
+data = data.replace('383aba2f915c41b589f6ebca691e6f0618a46e43', '0000000000000000000000000000000000000000')
+with open(path, 'w', encoding='utf-8') as handle:
+    handle.write(data)
+PY
+
+  if ! printf 'q\n' | TEST_CATALOG_FILE="$catalog_file" TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$listing_file" 2>&1; then
+    cat "$listing_file" >&2
+    fail 'macos-download should allow listing IPSW choices before checksum mismatch selection'
+  fi
+
+  selector="$(selector_for_output_line "$listing_file" '^[0-9]+\. 26\.4\.1 \(25E253\) \| IPSW \| Apple Silicon Mac restore image \| Download available$')"
+
+  if printf '%s\n' "$selector" | TEST_CATALOG_FILE="$catalog_file" TEST_STATE_DIR="$temp_dir/state" PATH="$temp_dir/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" "$temp_dir/scripts/macos/downloads/macos-download" > "$output_file" 2>&1; then
+    fail 'macos-download should fail clearly when the downloaded IPSW checksum does not match Apple\''s catalog SHA-1'
+  fi
+
+  assert_contains "$output_file" "ERROR: Downloaded IPSW checksum does not match Apple's catalog SHA-1." 'download workflow should fail clearly on IPSW checksum mismatch'
+  [[ ! -e "$download_target" ]] || fail 'macos-download should remove the downloaded IPSW when checksum verification fails'
+}
+
 test_help_output
 test_short_help_output
 test_rejects_positional_arguments
@@ -1008,7 +1155,12 @@ test_sorts_same_version_builds_newest_first
 test_documentation_headers
 test_requires_download_config_file
 test_requires_download_config_values_from_config_file
+test_rejects_absolute_download_dir
+test_rejects_parent_traversal_download_dir
+test_rejects_nested_parent_traversal_download_dir
 test_fails_clearly_when_installer_listing_is_unparseable
 test_cleans_up_temp_files_when_setup_fails
+test_verifies_ipsw_checksum_against_catalog_sha1
+test_fails_clearly_when_ipsw_checksum_mismatches
 
 printf 'PASS: tests/shared/downloads/test-macos-download.sh\n'

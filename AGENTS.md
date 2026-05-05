@@ -32,8 +32,8 @@ The active implementation surface is:
 - `configs/macos/brew/Brewfile-shared-ezirius`
 - `configs/macos/downloads/macos-download.conf`
 - `configs/shared/system/system-shared-shared.conf`
-- `configs/shared/system/system-maldoria-shared.conf`
-- `configs/shared/system/system-maravyn-shared.conf`
+- `configs/shared/system/system-configure.conf`
+- `configs/macos/system/system-maldoria-shared.conf`
 - `configs/macos/system/system-maldoria-ezirius.conf`
 - `configs/macos/system/system-maravyn-ezirius.conf`
 - `keys/macos/ssh/maldoria-ipirus-ezirius-login.pub`
@@ -88,11 +88,15 @@ configs/<os>/<application>/...
 
 This path pattern is the default for future application families as well.
 
-System config currently follows this path pattern under:
+System runtime support config currently lives at:
+
+- `configs/shared/system/system-configure.conf`
+
+Layered system settings currently follow this path pattern under:
 
 - `configs/<os>/system/system-<host>-<username>.conf`
 
-For system config, `shared` is valid in the OS, host, and username slots.
+For layered system settings, `shared` is valid in the OS, host, and username slots.
 
 Matching files load from least specific to most specific in this order within
 each OS scope:
@@ -104,6 +108,10 @@ each OS scope:
 
 Shared OS scope loads before the concrete OS scope. Later files override
 earlier values.
+
+`system-configure.conf` holds required workflow support values.
+Layered `system-<host>-<username>.conf` files hold only the settings you want
+managed. Settings absent from all matching layers are ignored.
 
 Download workflows currently follow this path pattern under:
 
@@ -371,6 +379,12 @@ The active installer:
 10. Skips already installed entries.
 11. Fails clearly on unsupported Brewfile lines.
 12. Logs each successful install to the per-host CSV activity log.
+13. Requires an Administrator account on macOS when bootstrapping Homebrew or installing missing casks.
+
+This macOS admin requirement applies to Homebrew bootstrap and missing cask installs only.
+Normal formula installs are not blocked by this guard.
+
+This cask policy is intentionally stricter than upstream Homebrew behaviour so the workflow fails early before attempting privileged cask installs from a non-admin account.
 
 Additional current behaviour:
 
@@ -432,16 +446,20 @@ The current shared path conventions are:
 4. labels each row as `IPSW` or `Installer`
 5. offers Apple Silicon IPSW downloads and ARM/X86 full installer downloads
 6. numbers only actionable downloads
-7. sorts each section newest to oldest by version and build
-8. stores IPSW downloads under `downloads/macos/downloads/` by default
-9. re-prompts on invalid interactive selection instead of exiting immediately
-10. supports `--help`
-11. takes no positional arguments
+7. verifies downloaded IPSWs against Apple's catalog `FirmwareSHA1` value
+8. requires `MACOS_DOWNLOAD_DIR_RELATIVE` to be a safe relative repo path
+9. sorts each section newest to oldest by version and build
+10. stores IPSW downloads under `downloads/macos/downloads/` by default
+11. re-prompts on invalid interactive selection instead of exiting immediately
+12. supports `--help`
+13. takes no positional arguments
 
 Important current limitation:
 
 - Apple Silicon restore images come from Apple's public macOS IPSW catalog
+- Apple Silicon restore image downloads are verified against Apple's published `FirmwareSHA1` values in that catalog
 - full installers come from Apple's `softwareupdate` tooling
+- full installers fetched through `softwareupdate` are not yet independently checksum-verified by this workflow
 - Intel restore IPSW rows are not shown in the default output because they are
   not actionable from current official Apple sources
 
@@ -464,7 +482,8 @@ Important current limitation:
 
 1. detects repo root, current host, and current username
 2. requires macOS and the needed system commands
-3. resolves all matching layered system config files in this order:
+3. loads `configs/shared/system/system-configure.conf` for required workflow support values
+4. resolves all matching layered system config files in this order:
    - `configs/shared/system/system-shared-shared.conf`
    - `configs/shared/system/system-shared-<username>.conf`
    - `configs/shared/system/system-<host>-shared.conf`
@@ -473,18 +492,20 @@ Important current limitation:
    - `configs/macos/system/system-shared-<username>.conf`
    - `configs/macos/system/system-<host>-shared.conf`
    - `configs/macos/system/system-<host>-<username>.conf`
-5. applies Dock auto-hide and Spaces ordering only when values differ
-6. restarts the Dock only when Dock settings changed
-7. applies AC power sleep with `pmset` only when needed
-8. uses `pmset -c` on portable Macs and `pmset -a` on non-portable Macs
-9. enables or disables macOS Remote Login based on the merged SSH config
-10. manages a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled
-11. deploys configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames
-12. revokes configured managed keys when they are removed from the current SSH config
-13. generates missing SSH server host keys when needed and enforces an Ed25519-only host key set
-14. validates `sshd` config before reloading when the managed SSH config changes
-15. validates the final merged config after all matching layers load
-16. logs each managed setting change to the shared per-host CSV activity log
+5. applies only the layered settings that are present after merging
+6. applies Dock auto-hide and Spaces ordering only when values differ
+7. restarts the Dock only when Dock settings changed
+8. applies AC power sleep with `pmset` only when needed
+9. uses `pmset -c` on portable Macs and `pmset -a` on non-portable Macs
+10. applies optional time zone automation, fixed time zone, and 24-hour clock settings only when they are configured
+11. enables or disables macOS Remote Login based on the merged SSH config
+12. manages a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled
+13. deploys configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames
+14. revokes configured managed keys when they are removed from the current SSH config
+15. generates missing SSH server host keys when needed and enforces an Ed25519-only host key set
+16. validates `sshd` config before reloading when the managed SSH config changes
+17. validates the final merged config after all matching layers load
+18. logs each managed setting change to the shared per-host CSV activity log
 
 When SSH is enabled in the current first pass, `SSHD_ALLOW_USERS` must be exactly `ezirius`.
 Other or multiple SSH allow-user values are currently unsupported.

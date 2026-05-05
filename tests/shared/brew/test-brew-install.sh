@@ -215,6 +215,12 @@ printf "curl should not be called\n" >&2
 exit 1
 EOF
   chmod +x "$fake_bin/curl"
+
+  write_command_stub "$fake_bin/dseditgroup" '#!/usr/bin/env bash
+if [[ "${TEST_IS_ADMIN:-1}" == "1" ]]; then
+  exit 0
+fi
+exit 1'
 }
 
 # Provide a fake brew command that records install/list/update calls.
@@ -627,6 +633,90 @@ EOF
   assert_contains "$output_file" 'Enable Local Network access for: Multipass' 'matches configured warning items by token regardless of entry type'
 }
 
+test_fails_clearly_when_missing_cask_user_is_not_admin() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+cask "vscodium"
+EOF
+
+  if TEST_IS_ADMIN=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail early when a missing cask would require admin rights'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Cask installs on macOS require an Administrator account: vscodium' 'fails clearly when a missing cask install requires admin rights'
+  assert_not_contains "$temp_dir/state/brew.log" 'install --cask vscodium' 'does not attempt the cask install after the admin guard fails'
+}
+
+test_skips_installed_cask_without_admin_failure() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  printf 'vscodium\n' > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+cask "vscodium"
+EOF
+
+  if ! TEST_IS_ADMIN=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should still skip already installed casks without admin failure'
+  fi
+
+  assert_contains "$output_file" 'Skipping installed cask: vscodium' 'skips already installed cask without admin failure'
+}
+
+test_missing_formula_still_installs_without_admin_guard() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+  setup_brew_stub "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "ripgrep"
+EOF
+
+  if ! TEST_IS_ADMIN=0 run_in_fake_repo "$temp_dir" "$output_file"; then
+    cat "$output_file" >&2
+    fail 'script should still install missing formulae without the cask admin guard'
+  fi
+
+  assert_contains "$temp_dir/state/brew.log" 'install ripgrep' 'installs missing formula without admin guard'
+}
+
 test_supports_shared_shared_brewfile() {
   local temp_dir
   local output_file
@@ -990,13 +1080,13 @@ test_active_files_are_documented() {
   [[ -x "$ROOT/scripts/macos/downloads/macos-download" ]] || fail 'active macos download script should be executable'
   [[ -x "$ROOT/scripts/macos/system/system-configure" ]] || fail 'active system script should be executable'
   assert_starts_with_comment "$ROOT/install" 'root install script should start with a header comment after shebang'
+  assert_starts_with_comment "$ROOT/configs/shared/system/system-configure.conf" 'active system support config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/macos/brew/Brewfile-shared-ezirius" 'active Brewfile should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/brew/brew-install.conf" 'brew installer runtime config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/shared/logging.conf" 'shared logging config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/macos/downloads/macos-download.conf" 'macos downloads runtime config should start with a header comment'
   assert_starts_with_comment "$ROOT/configs/shared/system/system-shared-shared.conf" 'active shared system config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/shared/system/system-maldoria-shared.conf" 'active host-shared system config should start with a header comment'
-  assert_starts_with_comment "$ROOT/configs/shared/system/system-maravyn-shared.conf" 'second active host-shared system config should start with a header comment'
+  assert_starts_with_comment "$ROOT/configs/macos/system/system-maldoria-shared.conf" 'active host-shared macOS system config should start with a header comment'
   assert_starts_with_comment "$ROOT/libs/shared/shared/common.sh" 'shared library should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/scripts/shared/brew/brew-install" 'active script should start with a header comment after shebang'
   assert_starts_with_comment "$ROOT/scripts/shared/shared/bootstrap" 'active bootstrap script should start with a header comment after shebang'
@@ -1238,6 +1328,32 @@ EOF
   fi
 
   assert_contains "$temp_dir/state/bootstrap-env.log" 'NONINTERACTIVE=1' 'non-interactive bootstrap should force NONINTERACTIVE=1'
+}
+
+test_fails_clearly_when_homebrew_missing_and_user_is_not_admin() {
+  local temp_dir
+  local output_file
+
+  temp_dir="$(mktemp -d)"
+  output_file="$temp_dir/output.log"
+  mkdir -p "$temp_dir/state"
+  : > "$temp_dir/state/installed-formulae"
+  : > "$temp_dir/state/installed-casks"
+
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  make_fake_repo "$temp_dir"
+  setup_common_stubs "$temp_dir"
+
+  cat > "$temp_dir/configs/macos/brew/Brewfile-shared-ezirius" <<'EOF'
+brew "nushell"
+EOF
+
+  if TEST_BOOTSTRAP_BREW=1 TEST_IS_ADMIN=0 HOMEBREW_SKIP_STANDARD_PREFIX_SHELLENV=1 run_in_fake_repo "$temp_dir" "$output_file"; then
+    fail 'script should fail early when Homebrew is missing and the user is not an admin'
+  fi
+
+  assert_contains "$output_file" 'ERROR: Homebrew bootstrap on macOS requires an Administrator account.' 'fails clearly when Homebrew bootstrap would require admin rights'
 }
 
 test_fails_clearly_when_non_interactive_homebrew_bootstrap_needs_sudo() {
@@ -1971,6 +2087,9 @@ test_does_not_warn_for_configured_item_not_in_matched_brewfiles
 test_does_not_warn_for_non_configured_item_even_if_installed
 test_does_not_print_warning_heading_when_no_relevant_warning_items_exist
 test_warn_matching_is_type_agnostic
+test_fails_clearly_when_missing_cask_user_is_not_admin
+test_skips_installed_cask_without_admin_failure
+test_missing_formula_still_installs_without_admin_guard
 test_fails_when_no_matching_brewfiles_exist
 test_selects_linux_brewfiles
 test_help_output
@@ -1988,6 +2107,7 @@ test_child_commands_do_not_consume_brewfile_input
 test_bootstraps_homebrew_and_logs_it
 test_bootstraps_homebrew_interactively_when_tty_is_available
 test_bootstraps_homebrew_non_interactively_when_tty_is_unavailable
+test_fails_clearly_when_homebrew_missing_and_user_is_not_admin
 test_fails_clearly_when_non_interactive_homebrew_bootstrap_needs_sudo
 test_supports_shared_shared_brewfile
 test_supports_host_shared_brewfile

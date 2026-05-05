@@ -60,6 +60,111 @@ contains_pub_file_name() {
 
 SYSTEM_CONFIGS=()
 
+optional_system_setting_names() {
+  printf '%s\n' \
+    'DOCK_AUTO_HIDE' \
+    'DOCK_REORDER_SPACES_BY_RECENT_USE' \
+    'AC_POWER_SYSTEM_SLEEP_MINUTES' \
+    'TIME_ZONE_AUTO_BY_LOCATION' \
+    'TIME_ZONE' \
+    'CLOCK_24_HOUR' \
+    'SSH_REMOTE_LOGIN_ENABLED' \
+    'SSHD_ALLOW_USERS' \
+    'SSHD_LOGIN_KEY_FILES'
+}
+
+clear_optional_system_setting_values() {
+  clear_config_values \
+    'DOCK_AUTO_HIDE' \
+    'DOCK_REORDER_SPACES_BY_RECENT_USE' \
+    'AC_POWER_SYSTEM_SLEEP_MINUTES' \
+    'TIME_ZONE_AUTO_BY_LOCATION' \
+    'TIME_ZONE' \
+    'CLOCK_24_HOUR' \
+    'SSH_REMOTE_LOGIN_ENABLED' \
+    'SSHD_ALLOW_USERS' \
+    'SSHD_LOGIN_KEY_FILES'
+}
+
+load_system_support_config() {
+  local root_path="$1"
+
+  clear_config_values \
+    'SYSTEM_DOCK_DOMAIN' \
+    'SYSTEM_DOCK_AUTO_HIDE_KEY' \
+    'SYSTEM_DOCK_REORDER_SPACES_KEY' \
+    'SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN' \
+    'SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN' \
+    'SYSTEM_PMSET_AC_POWER_SECTION' \
+    'SYSTEM_PMSET_SLEEP_LOG_TOKEN' \
+    'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' \
+    'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' \
+    'SYSTEM_TIME_ZONE_AUTO_LOG_TOKEN' \
+    'SYSTEM_TIME_ZONE_LOG_TOKEN' \
+    'SYSTEM_CLOCK_24_HOUR_LOG_TOKEN' \
+    'SSHD_PASSWORD_AUTHENTICATION' \
+    'SSHD_KBD_INTERACTIVE_AUTHENTICATION' \
+    'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION' \
+    'SSHD_PERMIT_ROOT_LOGIN' \
+    'SSHD_PUBKEY_AUTHENTICATION' \
+    'SSHD_X11_FORWARDING' \
+    'SSHD_ALLOW_TCP_FORWARDING' \
+    'SSHD_ALLOW_AGENT_FORWARDING' \
+    'SYSTEM_REMOTE_LOGIN_LOG_TOKEN' \
+    'SYSTEM_SSHD_CONFIG_LOG_TOKEN' \
+    'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN' \
+    'SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN' \
+    'SYSTEM_SSHD_CONFIG_DIR' \
+    'SYSTEM_SSHD_MANAGED_FILE_NAME' \
+    'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME' \
+    'SYSTEM_SSHD_HOST_ED25519_KEY_PATH' \
+    'SYSTEM_SSHD_HOST_RSA_KEY_PATH' \
+    'SYSTEM_SSHD_HOST_ECDSA_KEY_PATH'
+  load_required_config "$root_path" 'configs/shared/system/system-configure.conf'
+}
+
+support_config_value_names() {
+  printf '%s\n' \
+    'SYSTEM_DOCK_DOMAIN' \
+    'SYSTEM_DOCK_AUTO_HIDE_KEY' \
+    'SYSTEM_DOCK_REORDER_SPACES_KEY' \
+    'SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN' \
+    'SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN' \
+    'SYSTEM_PMSET_AC_POWER_SECTION' \
+    'SYSTEM_PMSET_SLEEP_LOG_TOKEN' \
+    'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' \
+    'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' \
+    'SYSTEM_TIME_ZONE_AUTO_LOG_TOKEN' \
+    'SYSTEM_TIME_ZONE_LOG_TOKEN' \
+    'SYSTEM_CLOCK_24_HOUR_LOG_TOKEN' \
+    'SSHD_PASSWORD_AUTHENTICATION' \
+    'SSHD_KBD_INTERACTIVE_AUTHENTICATION' \
+    'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION' \
+    'SSHD_PERMIT_ROOT_LOGIN' \
+    'SSHD_PUBKEY_AUTHENTICATION' \
+    'SSHD_X11_FORWARDING' \
+    'SSHD_ALLOW_TCP_FORWARDING' \
+    'SSHD_ALLOW_AGENT_FORWARDING' \
+    'SYSTEM_REMOTE_LOGIN_LOG_TOKEN' \
+    'SYSTEM_SSHD_CONFIG_LOG_TOKEN' \
+    'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN' \
+    'SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN' \
+    'SYSTEM_SSHD_CONFIG_DIR' \
+    'SYSTEM_SSHD_MANAGED_FILE_NAME' \
+    'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME' \
+    'SYSTEM_SSHD_HOST_ED25519_KEY_PATH' \
+    'SYSTEM_SSHD_HOST_RSA_KEY_PATH' \
+    'SYSTEM_SSHD_HOST_ECDSA_KEY_PATH'
+}
+
+require_support_config_values() {
+  local config_name
+
+  while IFS= read -r config_name; do
+    require_config_value "$config_name"
+  done < <(support_config_value_names)
+}
+
 add_system_config_candidate_if_present() {
   local config_path="$1"
 
@@ -84,49 +189,55 @@ resolve_system_configs() {
   add_system_config_candidate_if_present "$root_path/configs/$os_name/system/system-$host_name-shared.conf"
   add_system_config_candidate_if_present "$root_path/configs/$os_name/system/system-$host_name-$user_name.conf"
 
-  if [[ ${#SYSTEM_CONFIGS[@]} -eq 0 ]]; then
-    fail "No matching system config files found for os=$os_name host=$host_name username=$user_name"
-  fi
 }
 
 load_system_configs() {
   local config_path
 
-  clear_config_values \
-    'DOCK_AUTO_HIDE' \
-    'DOCK_REORDER_SPACES_BY_RECENT_USE' \
-    'AC_POWER_SYSTEM_SLEEP_MINUTES' \
-    'SYSTEM_DOCK_DOMAIN' \
-    'SYSTEM_DOCK_AUTO_HIDE_KEY' \
-    'SYSTEM_DOCK_REORDER_SPACES_KEY' \
-    'SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN' \
-    'SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN' \
-    'SYSTEM_PMSET_AC_POWER_SECTION' \
-    'SYSTEM_PMSET_SLEEP_LOG_TOKEN' \
-    'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' \
-    'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' \
-    'SSH_REMOTE_LOGIN_ENABLED' \
-    'SSHD_ALLOW_USERS' \
-    'SSHD_LOGIN_KEY_FILES' \
-    'SSHD_PASSWORD_AUTHENTICATION' \
-    'SSHD_KBD_INTERACTIVE_AUTHENTICATION' \
-    'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION' \
-    'SSHD_PERMIT_ROOT_LOGIN' \
-    'SSHD_PUBKEY_AUTHENTICATION' \
-    'SSHD_X11_FORWARDING' \
-    'SSHD_ALLOW_TCP_FORWARDING' \
-    'SSHD_ALLOW_AGENT_FORWARDING' \
-    'SYSTEM_REMOTE_LOGIN_LOG_TOKEN' \
-    'SYSTEM_SSHD_CONFIG_LOG_TOKEN' \
-    'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN' \
-    'SYSTEM_SSHD_CONFIG_DIR' \
-    'SYSTEM_SSHD_MANAGED_FILE_NAME' \
-    'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME'
+  clear_optional_system_setting_values
 
-  for config_path in "${SYSTEM_CONFIGS[@]}"; do
+  for config_path in "${SYSTEM_CONFIGS[@]-}"; do
+    [[ -n "$config_path" ]] || continue
     # shellcheck disable=SC1090
     source "$config_path"
   done
+}
+
+has_setting_value() {
+  local setting_name="$1"
+  [[ -n "${!setting_name+x}" ]]
+}
+
+should_manage_dock_auto_hide() {
+  has_setting_value 'DOCK_AUTO_HIDE'
+}
+
+should_manage_dock_spaces() {
+  has_setting_value 'DOCK_REORDER_SPACES_BY_RECENT_USE'
+}
+
+should_manage_sleep() {
+  has_setting_value 'AC_POWER_SYSTEM_SLEEP_MINUTES'
+}
+
+should_manage_time_zone_auto_by_location() {
+  has_setting_value 'TIME_ZONE_AUTO_BY_LOCATION'
+}
+
+should_manage_time_zone() {
+  has_setting_value 'TIME_ZONE'
+}
+
+should_manage_clock_24_hour() {
+  has_setting_value 'CLOCK_24_HOUR'
+}
+
+should_manage_time_settings() {
+  should_manage_time_zone_auto_by_location || should_manage_time_zone || should_manage_clock_24_hour
+}
+
+should_manage_ssh() {
+  has_setting_value 'SSH_REMOTE_LOGIN_ENABLED' || has_setting_value 'SSHD_ALLOW_USERS' || has_setting_value 'SSHD_LOGIN_KEY_FILES'
 }
 
 # Convert repo config booleans to the values expected by defaults.
@@ -188,6 +299,15 @@ validate_safe_file_name() {
   [[ "$file_name" != *$'\n'* ]] || fail "$variable_name must not contain newlines: $file_name"
 }
 
+validate_time_zone_value() {
+  local zone_name="$1"
+  local listed_zones
+
+  [[ -n "$zone_name" ]] || fail 'TIME_ZONE must not be empty'
+  listed_zones="$(systemsetup -listtimezones 2>/dev/null || true)"
+  printf '%s\n' "$listed_zones" | grep -Fx -- "$zone_name" >/dev/null 2>&1 || fail "Invalid TIME_ZONE value: $zone_name"
+}
+
 repo_ssh_keys_dir_path() {
   local root_path="$1"
   printf '%s/keys/macos/ssh\n' "$root_path"
@@ -216,8 +336,44 @@ user_home_directory() {
 current_remote_login_enabled() {
   local status_output
 
-  status_output="$(systemsetup -getremotelogin 2>/dev/null || true)"
+  status_output="$(sudo systemsetup -getremotelogin 2>/dev/null || true)"
   [[ "$status_output" == *'On'* ]]
+}
+
+current_time_zone_auto_by_location_enabled() {
+  local read_value
+
+  if read_value="$(sudo defaults read /Library/Preferences/com.apple.timezone.auto Active 2>/dev/null)"; then
+    [[ "$(normalize_defaults_bool_value "$read_value")" == 'true' ]]
+  else
+    return 1
+  fi
+}
+
+current_time_zone() {
+  local status_output
+
+  status_output="$(systemsetup -gettimezone 2>/dev/null || true)"
+  printf '%s\n' "${status_output#Time Zone: }"
+}
+
+current_24_hour_clock_enabled() {
+  local force_24
+  local force_12
+
+  if force_24="$(defaults read -g AppleICUForce24HourTime 2>/dev/null)"; then
+    force_24="$(normalize_defaults_bool_value "$force_24")"
+  else
+    force_24='false'
+  fi
+
+  if force_12="$(defaults read -g AppleICUForce12HourTime 2>/dev/null)"; then
+    force_12="$(normalize_defaults_bool_value "$force_12")"
+  else
+    force_12='true'
+  fi
+
+  [[ "$force_24" == 'true' && "$force_12" == 'false' ]]
 }
 
 render_sshd_managed_config() {
@@ -454,8 +610,6 @@ apply_ssh_settings() {
   user_home="$(user_home_directory 'ezirius')"
   sshd_config_path="$(managed_sshd_config_path)"
 
-  ensure_sshd_host_keys
-
   if [[ "$SSH_REMOTE_LOGIN_ENABLED" == 'false' ]]; then
     if current_remote_login_enabled; then
       sudo systemsetup -setremotelogin off
@@ -525,8 +679,13 @@ set_dock_bool() {
 
 # Apply the managed Dock settings as one grouped operation.
 apply_dock_settings() {
-  set_dock_bool "$SYSTEM_DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" "$SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN"
-  set_dock_bool "$SYSTEM_DOCK_REORDER_SPACES_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" "$SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN"
+  if should_manage_dock_auto_hide; then
+    set_dock_bool "$SYSTEM_DOCK_AUTO_HIDE_KEY" "$DOCK_AUTO_HIDE" "$SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN"
+  fi
+
+  if should_manage_dock_spaces; then
+    set_dock_bool "$SYSTEM_DOCK_REORDER_SPACES_KEY" "$DOCK_REORDER_SPACES_BY_RECENT_USE" "$SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN"
+  fi
 }
 
 # Detect whether the current Mac should use the portable pmset scope.
@@ -571,46 +730,63 @@ apply_pmset_sleep() {
   append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_PMSET_SLEEP_LOG_TOKEN" ''
 }
 
+apply_time_zone_auto_by_location() {
+  local desired_value="$1"
+  local current_value='false'
+
+  if current_time_zone_auto_by_location_enabled; then
+    current_value='true'
+  fi
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  sudo defaults write /Library/Preferences/com.apple.timezone.auto Active -bool "$desired_value"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_TIME_ZONE_AUTO_LOG_TOKEN" ''
+}
+
+apply_time_zone() {
+  local desired_value="$1"
+  local current_value
+
+  current_value="$(current_time_zone)"
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  sudo systemsetup -settimezone "$desired_value"
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_TIME_ZONE_LOG_TOKEN" ''
+}
+
+apply_24_hour_clock() {
+  local desired_value="$1"
+  local current_value='false'
+
+  if current_24_hour_clock_enabled; then
+    current_value='true'
+  fi
+
+  if [[ "$current_value" == "$desired_value" ]]; then
+    return 0
+  fi
+
+  defaults write -g AppleICUForce24HourTime -bool "$desired_value"
+  if [[ "$desired_value" == 'true' ]]; then
+    defaults write -g AppleICUForce12HourTime -bool false
+  else
+    defaults write -g AppleICUForce12HourTime -bool true
+  fi
+  killall cfprefsd SystemUIServer >/dev/null 2>&1 || true
+  append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_CLOCK_24_HOUR_LOG_TOKEN" ''
+}
+
 # Validate that every required config value was provided by the chosen file.
 validate_config() {
-  [[ -n "${DOCK_AUTO_HIDE:-}" ]] || fail 'DOCK_AUTO_HIDE is not set in the managed macOS system config'
-  [[ -n "${DOCK_REORDER_SPACES_BY_RECENT_USE:-}" ]] || fail 'DOCK_REORDER_SPACES_BY_RECENT_USE is not set in the managed macOS system config'
-  [[ -n "${AC_POWER_SYSTEM_SLEEP_MINUTES:-}" ]] || fail 'AC_POWER_SYSTEM_SLEEP_MINUTES is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_DOCK_DOMAIN:-}" ]] || fail 'SYSTEM_DOCK_DOMAIN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_DOCK_AUTO_HIDE_KEY:-}" ]] || fail 'SYSTEM_DOCK_AUTO_HIDE_KEY is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_DOCK_REORDER_SPACES_KEY:-}" ]] || fail 'SYSTEM_DOCK_REORDER_SPACES_KEY is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN:-}" ]] || fail 'SYSTEM_DOCK_AUTO_HIDE_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN:-}" ]] || fail 'SYSTEM_DOCK_REORDER_SPACES_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_PMSET_AC_POWER_SECTION:-}" ]] || fail 'SYSTEM_PMSET_AC_POWER_SECTION is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_PMSET_SLEEP_LOG_TOKEN:-}" ]] || fail 'SYSTEM_PMSET_SLEEP_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE:-}" ]] || fail 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE is not set in the managed macOS system config'
-  [[ -n "${SSH_REMOTE_LOGIN_ENABLED:-}" ]] || fail 'SSH_REMOTE_LOGIN_ENABLED is not set in the managed macOS system config'
-  [[ -n "${SSHD_PASSWORD_AUTHENTICATION:-}" ]] || fail 'SSHD_PASSWORD_AUTHENTICATION is not set in the managed macOS system config'
-  [[ -n "${SSHD_KBD_INTERACTIVE_AUTHENTICATION:-}" ]] || fail 'SSHD_KBD_INTERACTIVE_AUTHENTICATION is not set in the managed macOS system config'
-  [[ -n "${SSHD_CHALLENGE_RESPONSE_AUTHENTICATION:-}" ]] || fail 'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION is not set in the managed macOS system config'
-  [[ -n "${SSHD_PERMIT_ROOT_LOGIN:-}" ]] || fail 'SSHD_PERMIT_ROOT_LOGIN is not set in the managed macOS system config'
-  [[ -n "${SSHD_PUBKEY_AUTHENTICATION:-}" ]] || fail 'SSHD_PUBKEY_AUTHENTICATION is not set in the managed macOS system config'
-  [[ -n "${SSHD_X11_FORWARDING:-}" ]] || fail 'SSHD_X11_FORWARDING is not set in the managed macOS system config'
-  [[ -n "${SSHD_ALLOW_TCP_FORWARDING:-}" ]] || fail 'SSHD_ALLOW_TCP_FORWARDING is not set in the managed macOS system config'
-  [[ -n "${SSHD_ALLOW_AGENT_FORWARDING:-}" ]] || fail 'SSHD_ALLOW_AGENT_FORWARDING is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_REMOTE_LOGIN_LOG_TOKEN:-}" ]] || fail 'SYSTEM_REMOTE_LOGIN_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_CONFIG_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_CONFIG_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN:-}" ]] || fail 'SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_CONFIG_DIR:-}" ]] || fail 'SYSTEM_SSHD_CONFIG_DIR is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_MANAGED_FILE_NAME:-}" ]] || fail 'SYSTEM_SSHD_MANAGED_FILE_NAME is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME:-}" ]] || fail 'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_HOST_ED25519_KEY_PATH:-}" ]] || fail 'SYSTEM_SSHD_HOST_ED25519_KEY_PATH is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_HOST_RSA_KEY_PATH:-}" ]] || fail 'SYSTEM_SSHD_HOST_RSA_KEY_PATH is not set in the managed macOS system config'
-  [[ -n "${SYSTEM_SSHD_HOST_ECDSA_KEY_PATH:-}" ]] || fail 'SYSTEM_SSHD_HOST_ECDSA_KEY_PATH is not set in the managed macOS system config'
+  require_support_config_values
 
-  validate_repo_bool_value 'DOCK_AUTO_HIDE' "$DOCK_AUTO_HIDE"
-  validate_repo_bool_value 'DOCK_REORDER_SPACES_BY_RECENT_USE' "$DOCK_REORDER_SPACES_BY_RECENT_USE"
-  validate_non_negative_integer 'AC_POWER_SYSTEM_SLEEP_MINUTES' "$AC_POWER_SYSTEM_SLEEP_MINUTES"
   validate_pmset_scope_value 'SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE' "$SYSTEM_PMSET_PORTABLE_SLEEP_SCOPE"
   validate_pmset_scope_value 'SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE' "$SYSTEM_PMSET_NON_PORTABLE_SLEEP_SCOPE"
-  validate_repo_bool_value 'SSH_REMOTE_LOGIN_ENABLED' "$SSH_REMOTE_LOGIN_ENABLED"
   validate_repo_bool_value 'SSHD_PASSWORD_AUTHENTICATION' "$SSHD_PASSWORD_AUTHENTICATION"
   validate_repo_bool_value 'SSHD_KBD_INTERACTIVE_AUTHENTICATION' "$SSHD_KBD_INTERACTIVE_AUTHENTICATION"
   validate_repo_bool_value 'SSHD_CHALLENGE_RESPONSE_AUTHENTICATION' "$SSHD_CHALLENGE_RESPONSE_AUTHENTICATION"
@@ -620,7 +796,36 @@ validate_config() {
   validate_repo_bool_value 'SSHD_ALLOW_TCP_FORWARDING' "$SSHD_ALLOW_TCP_FORWARDING"
   validate_repo_bool_value 'SSHD_ALLOW_AGENT_FORWARDING' "$SSHD_ALLOW_AGENT_FORWARDING"
 
-  if [[ "$SSH_REMOTE_LOGIN_ENABLED" == 'true' ]]; then
+  if should_manage_dock_auto_hide; then
+    validate_repo_bool_value 'DOCK_AUTO_HIDE' "$DOCK_AUTO_HIDE"
+  fi
+
+  if should_manage_dock_spaces; then
+    validate_repo_bool_value 'DOCK_REORDER_SPACES_BY_RECENT_USE' "$DOCK_REORDER_SPACES_BY_RECENT_USE"
+  fi
+
+  if should_manage_sleep; then
+    validate_non_negative_integer 'AC_POWER_SYSTEM_SLEEP_MINUTES' "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+  fi
+
+  if should_manage_time_zone_auto_by_location; then
+    validate_repo_bool_value 'TIME_ZONE_AUTO_BY_LOCATION' "$TIME_ZONE_AUTO_BY_LOCATION"
+  fi
+
+  if should_manage_time_zone; then
+    validate_time_zone_value "$TIME_ZONE"
+  fi
+
+  if should_manage_clock_24_hour; then
+    validate_repo_bool_value 'CLOCK_24_HOUR' "$CLOCK_24_HOUR"
+  fi
+
+  if should_manage_ssh; then
+    [[ -n "${SSH_REMOTE_LOGIN_ENABLED:-}" ]] || fail 'SSH_REMOTE_LOGIN_ENABLED must be set when SSH settings are managed'
+    validate_repo_bool_value 'SSH_REMOTE_LOGIN_ENABLED' "$SSH_REMOTE_LOGIN_ENABLED"
+  fi
+
+  if [[ "${SSH_REMOTE_LOGIN_ENABLED:-false}" == 'true' ]]; then
     [[ -n "${SSHD_ALLOW_USERS:-}" ]] || fail 'SSHD_ALLOW_USERS must be set when SSH_REMOTE_LOGIN_ENABLED is true'
     [[ "$SSHD_ALLOW_USERS" == 'ezirius' ]] || fail 'SSHD_ALLOW_USERS must be exactly ezirius when SSH_REMOTE_LOGIN_ENABLED is true'
     [[ -n "${SSHD_LOGIN_KEY_FILES:-}" ]] || fail 'SSHD_LOGIN_KEY_FILES must be set when SSH_REMOTE_LOGIN_ENABLED is true'
@@ -661,6 +866,7 @@ main() {
   root_path="$(repo_root_from_script_path "$SCRIPT_PATH")"
   ROOT_PATH="$root_path"
   load_shared_logging_config "$root_path"
+  load_system_support_config "$root_path"
   os_name="$(detect_os)"
   host_name="$(detect_host)"
   user_name="$(detect_username)"
@@ -673,18 +879,39 @@ main() {
   load_system_configs
   validate_config
 
-  print_green 'Applying Dock settings'
-  apply_dock_settings
+  if should_manage_dock_auto_hide || should_manage_dock_spaces; then
+    print_green 'Applying Dock settings'
+    apply_dock_settings
 
-  if [[ "$DOCK_CHANGED" == '1' ]]; then
-    killall Dock >/dev/null 2>&1 || true
+    if [[ "$DOCK_CHANGED" == '1' ]]; then
+      killall Dock >/dev/null 2>&1 || true
+    fi
   fi
 
-  print_green 'Applying power settings'
-  apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+  if should_manage_sleep; then
+    print_green 'Applying power settings'
+    apply_pmset_sleep "$AC_POWER_SYSTEM_SLEEP_MINUTES"
+  fi
 
-  print_green 'Applying SSH settings'
-  apply_ssh_settings "$root_path"
+  if should_manage_time_settings; then
+    print_green 'Applying time settings'
+    if should_manage_time_zone_auto_by_location; then
+      apply_time_zone_auto_by_location "$TIME_ZONE_AUTO_BY_LOCATION"
+    fi
+    if should_manage_time_zone; then
+      apply_time_zone "$TIME_ZONE"
+    fi
+    if should_manage_clock_24_hour; then
+      apply_24_hour_clock "$CLOCK_24_HOUR"
+    fi
+  fi
+
+  ensure_sshd_host_keys
+
+  if should_manage_ssh; then
+    print_green 'Applying SSH settings'
+    apply_ssh_settings "$root_path"
+  fi
 
   print_green 'macOS system settings are ready'
 }

@@ -537,12 +537,20 @@ homebrew_bootstrap_is_interactive() {
   [[ -t 0 && -t 1 ]]
 }
 
+current_user_is_macos_admin() {
+  dseditgroup -o checkmember -m "$(whoami)" admin >/dev/null 2>&1
+}
+
 # Install Homebrew when it is missing, then log the bootstrap install.
 bootstrap_homebrew_if_missing() {
   local version_name
 
   if command -v brew >/dev/null 2>&1; then
     return 0
+  fi
+
+  if [[ "$OS_NAME" == 'macos' ]] && ! current_user_is_macos_admin; then
+    fail 'Homebrew bootstrap on macOS requires an Administrator account.'
   fi
 
   require_command curl
@@ -577,6 +585,9 @@ install_missing_entry() {
   if [[ "$entry_type" == "brew" ]]; then
     brew install "$entry_name"
   else
+    if [[ "$OS_NAME" == 'macos' ]] && ! current_user_is_macos_admin; then
+      fail "Cask installs on macOS require an Administrator account: $entry_name"
+    fi
     brew install --cask "$entry_name"
   fi
 
@@ -653,6 +664,7 @@ main() {
   require_config_value 'LOCAL_NETWORK_WARNING_TITLE'
   require_config_value 'LOCAL_NETWORK_WARNING_ITEMS'
   os_name="$(detect_os)"
+  OS_NAME="$os_name"
   host_name="$(detect_host)"
   user_name="$(detect_username)"
   BREWFILES=()

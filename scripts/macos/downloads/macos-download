@@ -51,6 +51,18 @@ fetch_installer_listing() {
   softwareupdate --list-full-installers
 }
 
+validate_relative_download_dir() {
+  local dir_path="$1"
+
+  [[ -n "$dir_path" ]] || fail 'MACOS_DOWNLOAD_DIR_RELATIVE must be set'
+  [[ "$dir_path" != /* ]] || fail 'MACOS_DOWNLOAD_DIR_RELATIVE must be a relative path'
+  case "/$dir_path/" in
+    */../*|*/..)
+      fail 'MACOS_DOWNLOAD_DIR_RELATIVE must not contain .. path traversal'
+      ;;
+  esac
+}
+
 main() {
   local catalog_file=''
   local installers_file=''
@@ -119,6 +131,7 @@ main() {
   require_config_value 'MACOS_DOWNLOAD_SUCCESS_IPSW_PREFIX'
   require_config_value 'MACOS_DOWNLOAD_SUCCESS_INSTALLER_PREFIX'
   require_config_value 'MACOS_DOWNLOAD_INSTALLER_DESTINATION_NOTE'
+  validate_relative_download_dir "$MACOS_DOWNLOAD_DIR_RELATIVE"
   download_dir="$root_path/$MACOS_DOWNLOAD_DIR_RELATIVE"
 
   trap cleanup_temp_files EXIT
@@ -163,10 +176,11 @@ def extract_restore_entries(node, current_model=None):
             firmware_url = restore.get('FirmwareURL')
             product_version = restore.get('ProductVersion')
             build_version = restore.get('BuildVersion') or restore.get('Build')
+            firmware_sha1 = restore.get('FirmwareSHA1')
             # Only UniversalMac restore images are actionable Apple Silicon IPSWs
             # from Apple's current public catalog contract.
             if isinstance(firmware_url, str) and isinstance(product_version, str) and isinstance(build_version, str) and 'UniversalMac_' in firmware_url:
-                entries.append((product_version, build_version, firmware_url))
+                entries.append((product_version, build_version, firmware_url, firmware_sha1))
         for key, value in node.items():
             next_model = current_model
             if isinstance(key, str):
@@ -224,13 +238,14 @@ section_labels = {'arm': arm_section_label, 'x86': x86_section_label}
 grouped = {'arm': {}, 'x86': {}}
 selection_map = {}
 
-for version, build, url in extract_restore_entries(catalog):
+for version, build, url, firmware_sha1 in extract_restore_entries(catalog):
     grouped['arm'][(version, build, ipsw_artifact_token)] = {
         'artifact': ipsw_artifact_token,
         'label': ipsw_label,
         'available': True,
         'mode': 'url',
         'value': url,
+        'sha1': firmware_sha1,
     }
 
 installer_pattern = re.compile(r'^\* Title: .*?, Version: ([0-9]+(?:\.[0-9]+)*), Size: .*?, Build: ([^, ]+)(?:,.*)?$')
@@ -297,6 +312,23 @@ if meta['mode'] == 'url':
     os.makedirs(download_dir, exist_ok=True)
     target_path = os.path.join(download_dir, f'{version}-{build}.ipsw')
     subprocess.run(['curl', '-fL', '-o', target_path, meta['value']], check=True)
+    expected_sha1 = meta.get('sha1')
+    if not isinstance(expected_sha1, str) or not re.fullmatch(r'[0-9a-fA-F]{40}', expected_sha1):
+        os.remove(target_path)
+        print(colorize('red', 'ERROR: Apple IPSW catalog did not provide a valid FirmwareSHA1 for the selected download.'))
+        raise SystemExit(1)
+    import hashlib
+    actual_sha1 = hashlib.sha1()
+    with open(target_path, 'rb') as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            actual_sha1.update(chunk)
+    if actual_sha1.hexdigest().lower() != expected_sha1.lower():
+        os.remove(target_path)
+        print(colorize('red', "ERROR: Downloaded IPSW checksum does not match Apple's catalog SHA-1."))
+        raise SystemExit(1)
     print(colorize('green', f'{success_ipsw_prefix} {version} ({build}) to {target_path}'))
 else:
     subprocess.run(['softwareupdate', '--fetch-full-installer', '--full-installer-version', meta['value']], check=True)
