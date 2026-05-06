@@ -500,8 +500,8 @@ Important current limitation:
 10. applies optional time zone automation, fixed time zone, and 24-hour clock settings only when they are configured
 11. enables or disables macOS Remote Login based on the merged SSH config
 12. manages a hardened `sshd` drop-in under `/etc/ssh/sshd_config.d/` when SSH is enabled
-13. deploys configured repo-managed public keys from `keys/macos/ssh/` into `~/.ssh/authorized_keys.d/` using their exact `.pub` filenames
-14. revokes configured managed keys when they are removed from the current SSH config
+13. builds a repo-managed `~/.ssh/authorized_keys` file from the configured public keys in `keys/macos/ssh/`
+14. removes the managed `~/.ssh/authorized_keys` file when SSH is disabled
 15. generates missing SSH server host keys when needed and enforces an Ed25519-only host key set
 16. validates `sshd` config before reloading when the managed SSH config changes
 17. validates the final merged config after all matching layers load
@@ -510,10 +510,10 @@ Important current limitation:
 When SSH is enabled in the current first pass, `SSHD_ALLOW_USERS` must contain exactly one username.
 Multiple SSH allow-user values are currently unsupported.
 
-The system workflow treats `~/.ssh/authorized_keys.d/` as the repo-managed SSH key directory.
-Configured `.pub` files are deployed there using their exact filenames.
-Managed `.pub` files in that directory that are not present in the current `SSHD_LOGIN_KEY_FILES` value are removed.
+The system workflow treats `~/.ssh/authorized_keys` as the repo-managed SSH login key file.
+Configured repo public keys are written there in the order listed by `SSHD_LOGIN_KEY_FILES`.
+When SSH is disabled, the managed `authorized_keys` file is removed.
 
 The workflow always enforces Ed25519-only SSH server host keys.
 Non-Ed25519 SSH server host keys are removed.
-This is separate from repo-managed login public keys in `authorized_keys.d`.
+This is separate from repo-managed login public keys written to `authorized_keys`.

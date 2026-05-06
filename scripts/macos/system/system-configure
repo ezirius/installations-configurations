@@ -124,7 +124,6 @@ load_system_support_config() {
     'SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN' \
     'SYSTEM_SSHD_CONFIG_DIR' \
     'SYSTEM_SSHD_MANAGED_FILE_NAME' \
-    'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME' \
     'SYSTEM_SSHD_HOST_ED25519_KEY_PATH' \
     'SYSTEM_SSHD_HOST_RSA_KEY_PATH' \
     'SYSTEM_SSHD_HOST_ECDSA_KEY_PATH'
@@ -159,7 +158,6 @@ support_config_value_names() {
     'SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN' \
     'SYSTEM_SSHD_CONFIG_DIR' \
     'SYSTEM_SSHD_MANAGED_FILE_NAME' \
-    'SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME' \
     'SYSTEM_SSHD_HOST_ED25519_KEY_PATH' \
     'SYSTEM_SSHD_HOST_RSA_KEY_PATH' \
     'SYSTEM_SSHD_HOST_ECDSA_KEY_PATH'
@@ -325,9 +323,9 @@ managed_sshd_config_path() {
   printf '%s/%s\n' "$SYSTEM_SSHD_CONFIG_DIR" "$SYSTEM_SSHD_MANAGED_FILE_NAME"
 }
 
-authorized_keys_dir_path_for_home() {
+authorized_keys_file_path_for_home() {
   local user_home="$1"
-  printf '%s/.ssh/%s\n' "$user_home" "$SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME"
+  printf '%s/.ssh/authorized_keys\n' "$user_home"
 }
 
 user_home_directory() {
@@ -414,7 +412,7 @@ X11Forwarding $x11_forwarding
 AllowTcpForwarding $allow_tcp_forwarding
 AllowAgentForwarding $allow_agent_forwarding
 AllowUsers $SSHD_ALLOW_USERS
-AuthorizedKeysFile .ssh/authorized_keys .ssh/$SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME/*
+AuthorizedKeysFile .ssh/authorized_keys
 EOF
 }
 
@@ -523,24 +521,15 @@ ensure_sshd_host_keys() {
   fi
 }
 
-sync_managed_authorized_key_files() {
+render_authorized_keys_content() {
   local root_path="$1"
-  local user_home="$2"
   local repo_key_dir
-  local authorized_keys_dir
   local key_file_name
   local repo_key_path
-  local managed_key_path
   local key_content
-  local deployed_key_candidate
-  local deployed_key_name
-  local keys_changed='1'
+  local rendered_content=''
 
   repo_key_dir="$(repo_ssh_keys_dir_path "$root_path")"
-  authorized_keys_dir="$(authorized_keys_dir_path_for_home "$user_home")"
-
-  command mkdir -p "$user_home/.ssh" "$authorized_keys_dir"
-  command chmod 700 "$user_home/.ssh" "$authorized_keys_dir"
 
   for key_file_name in $SSHD_LOGIN_KEY_FILES; do
     validate_safe_file_name 'SSHD_LOGIN_KEY_FILES entry' "$key_file_name"
@@ -548,56 +537,36 @@ sync_managed_authorized_key_files() {
     [[ -f "$repo_key_path" ]] || fail "SSH login key file not found: $repo_key_path"
     key_content="$(<"$repo_key_path")"
     [[ -n "$key_content" && "$key_content" != *$'\n'* ]] || fail "SSH login key file must contain one key line: $repo_key_path"
-    managed_key_path="$authorized_keys_dir/$key_file_name"
-    if write_user_owned_file_if_changed "$managed_key_path" "$key_content"; then
-      keys_changed='0'
+    if [[ -n "$rendered_content" ]]; then
+      rendered_content+=$'\n'
     fi
+    rendered_content+="$key_content"
   done
 
-  for deployed_key_candidate in "$authorized_keys_dir"/*.pub; do
-    [[ -e "$deployed_key_candidate" ]] || continue
-    deployed_key_name="$(basename "$deployed_key_candidate")"
-    if ! contains_pub_file_name "$deployed_key_name"; then
-      continue
-    fi
-
-    if contains_distinct_word "$SSHD_LOGIN_KEY_FILES" "$deployed_key_name"; then
-      continue
-    fi
-
-    if remove_user_owned_file_if_present "$authorized_keys_dir/$deployed_key_name"; then
-      keys_changed='0'
-    fi
-  done
-
-  [[ "$keys_changed" == '0' ]]
+  printf '%s\n' "$rendered_content"
 }
 
-remove_managed_authorized_key_files() {
+sync_managed_authorized_keys_file() {
   local root_path="$1"
   local user_home="$2"
-  local authorized_keys_dir
-  local deployed_key_candidate
-  local deployed_key_name
-  local keys_changed='1'
+  local authorized_keys_path
+  local rendered_content
 
-  authorized_keys_dir="$(authorized_keys_dir_path_for_home "$user_home")"
+  authorized_keys_path="$(authorized_keys_file_path_for_home "$user_home")"
+  rendered_content="$(render_authorized_keys_content "$root_path")"
 
-  [[ -d "$authorized_keys_dir" ]] || return 1
+  command mkdir -p "$user_home/.ssh"
+  command chmod 700 "$user_home/.ssh"
 
-  for deployed_key_candidate in "$authorized_keys_dir"/*.pub; do
-    [[ -e "$deployed_key_candidate" ]] || continue
-    deployed_key_name="$(basename "$deployed_key_candidate")"
-    if ! contains_pub_file_name "$deployed_key_name"; then
-      continue
-    fi
+  write_user_owned_file_if_changed "$authorized_keys_path" "$rendered_content"
+}
 
-    if remove_user_owned_file_if_present "$authorized_keys_dir/$deployed_key_name"; then
-      keys_changed='0'
-    fi
-  done
+remove_managed_authorized_keys_file() {
+  local user_home="$1"
+  local authorized_keys_path
 
-  [[ "$keys_changed" == '0' ]]
+  authorized_keys_path="$(authorized_keys_file_path_for_home "$user_home")"
+  remove_user_owned_file_if_present "$authorized_keys_path"
 }
 
 validate_sshd_configuration() {
@@ -628,14 +597,14 @@ apply_ssh_settings() {
       append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_CONFIG_LOG_TOKEN" ''
     fi
 
-    if remove_managed_authorized_key_files "$root_path" "$user_home"; then
+    if remove_managed_authorized_keys_file "$user_home"; then
       append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
     fi
 
     return 0
   fi
 
-  if sync_managed_authorized_key_files "$root_path" "$user_home"; then
+  if sync_managed_authorized_keys_file "$root_path" "$user_home"; then
     authorized_keys_changed='0'
     append_activity_log_row "$LOG_FILE_PATH" "$LOG_HOST_NAME" "$ACTION_CONFIGURED" "$SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN" ''
   fi

@@ -347,7 +347,6 @@ SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN="system-sshd-authorized-key"
 SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN="system-sshd-host-keys"
 SYSTEM_SSHD_CONFIG_DIR="$temp_dir/state/etc/ssh/sshd_config.d"
 SYSTEM_SSHD_MANAGED_FILE_NAME="90-installations-and-configurations.conf"
-SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME="authorized_keys.d"
 SYSTEM_SSHD_HOST_ED25519_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ed25519_key"
 SYSTEM_SSHD_HOST_RSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_rsa_key"
 SYSTEM_SSHD_HOST_ECDSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ecdsa_key"
@@ -415,9 +414,9 @@ managed_sshd_config_path() {
   printf '%s\n' "$temp_dir/state/etc/ssh/sshd_config.d/90-installations-and-configurations.conf"
 }
 
-managed_authorized_keys_dir() {
+managed_authorized_keys_file() {
   local temp_dir="$1"
-  printf '%s\n' "$temp_dir/home/ezirius/.ssh/authorized_keys.d"
+  printf '%s\n' "$temp_dir/home/ezirius/.ssh/authorized_keys"
 }
 
 host_key_path() {
@@ -562,7 +561,6 @@ SYSTEM_SSHD_AUTHORIZED_KEY_LOG_TOKEN="system-sshd-authorized-key"
 SYSTEM_SSHD_HOST_KEYS_LOG_TOKEN="system-sshd-host-keys"
 SYSTEM_SSHD_CONFIG_DIR="$temp_dir/state/etc/ssh/sshd_config.d"
 SYSTEM_SSHD_MANAGED_FILE_NAME="90-installations-and-configurations.conf"
-SYSTEM_SSHD_AUTHORIZED_KEYS_DIR_NAME="authorized_keys.d"
 SYSTEM_SSHD_HOST_ED25519_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ed25519_key"
 SYSTEM_SSHD_HOST_RSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_rsa_key"
 SYSTEM_SSHD_HOST_ECDSA_KEY_PATH="$temp_dir/state/etc/ssh/ssh_host_ecdsa_key"
@@ -1107,12 +1105,12 @@ test_ssh_enabled_supports_any_single_allowed_user() {
   local temp_dir
   local output_file
   local sshd_config_path
-  local authorized_keys_dir
+  local authorized_keys_file
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
   sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
-  authorized_keys_dir="$temp_dir/home/otheruser/.ssh/authorized_keys.d"
+  authorized_keys_file="$temp_dir/home/otheruser/.ssh/authorized_keys"
   mkdir -p "$temp_dir/state"
   : > "$temp_dir/state/defaults.log"
   : > "$temp_dir/state/pmset.log"
@@ -1138,7 +1136,7 @@ SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
   fi
 
   assert_contains "$sshd_config_path" 'AllowUsers otheruser' 'renders AllowUsers for the configured single username'
-  assert_contains "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'deploys managed SSH keys into the configured user home directory'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'deploys managed SSH keys into the configured user authorized_keys file'
 }
 
 test_ssh_enabled_requires_sshd_login_key_files() {
@@ -1168,13 +1166,13 @@ test_ssh_enabled_deploys_maldoria_keys_with_exact_pub_filenames() {
   local output_file
   local log_file
   local sshd_config_path
-  local authorized_keys_dir
+  local authorized_keys_file
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
   log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
   sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
-  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  authorized_keys_file="$(managed_authorized_keys_file "$temp_dir")"
   mkdir -p "$temp_dir/state"
   : > "$temp_dir/state/defaults.log"
   : > "$temp_dir/state/pmset.log"
@@ -1201,10 +1199,10 @@ SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub maldoria-iparia-ezirius-
 
   assert_contains "$temp_dir/state/systemsetup.log" '-setremotelogin on' 'enables Remote Login when SSH is enabled'
   assert_contains "$sshd_config_path" 'AllowUsers ezirius' 'renders AllowUsers for ezirius'
-  assert_contains "$sshd_config_path" 'AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/*' 'renders authorized keys directory support'
+  assert_contains "$sshd_config_path" 'AuthorizedKeysFile .ssh/authorized_keys' 'renders the managed authorized_keys path'
   assert_contains "$sshd_config_path" 'PasswordAuthentication no' 'renders hardened password authentication setting'
-  assert_contains "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'deploys the first maldoria key with exact .pub filename'
-  assert_contains "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGqvd39EeXgfGhLRNoOXJYTkc0wbw825urpZKW+KiUR' 'deploys the second maldoria key with exact .pub filename'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'writes the first maldoria key into authorized_keys'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGqvd39EeXgfGhLRNoOXJYTkc0wbw825urpZKW+KiUR' 'writes the second maldoria key into authorized_keys'
   assert_contains "$temp_dir/state/sshd.log" '-t' 'validates sshd configuration before reload'
   assert_not_contains "$temp_dir/state/launchctl.log" 'kickstart -k system/com.openssh.sshd' 'does not reload sshd when Remote Login is being enabled from an off state'
   assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-remote-login,' 'logs the Remote Login enablement change'
@@ -1248,11 +1246,11 @@ SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
 test_ssh_enabled_deploys_maravyn_keys_with_exact_pub_filenames() {
   local temp_dir
   local output_file
-  local authorized_keys_dir
+  local authorized_keys_file
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
-  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  authorized_keys_file="$(managed_authorized_keys_file "$temp_dir")"
   mkdir -p "$temp_dir/state"
   : > "$temp_dir/state/defaults.log"
   : > "$temp_dir/state/pmset.log"
@@ -1278,20 +1276,20 @@ SSHD_LOGIN_KEY_FILES="maravyn-maldoria-ezirius-login.pub maravyn-ipirus-ezirius-
     fail 'system-configure should deploy the configured maravyn keys'
   fi
 
-  assert_contains "$authorized_keys_dir/maravyn-maldoria-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICSqWNpR0r6JR8U0WpEukrkXvnax3sECll3PtKDviLGf' 'deploys the first maravyn key with exact .pub filename'
-  assert_contains "$authorized_keys_dir/maravyn-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIESP2Js7TQIZ6RAeLFHJrF5dYJ4id/Crey/FkDmx991c' 'deploys the second maravyn key with exact .pub filename'
-  assert_contains "$authorized_keys_dir/maravyn-iparia-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO/0nCy2P4evAkplHUCmuzyCu94LvjqDCyxU2K5p1ONu' 'deploys the third maravyn key with exact .pub filename'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICSqWNpR0r6JR8U0WpEukrkXvnax3sECll3PtKDviLGf' 'writes the first maravyn key into authorized_keys'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIESP2Js7TQIZ6RAeLFHJrF5dYJ4id/Crey/FkDmx991c' 'writes the second maravyn key into authorized_keys'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO/0nCy2P4evAkplHUCmuzyCu94LvjqDCyxU2K5p1ONu' 'writes the third maravyn key into authorized_keys'
 }
 
 test_ssh_key_sync_removes_stale_managed_keys_not_in_current_config() {
   local temp_dir
   local output_file
-  local authorized_keys_dir
+  local authorized_keys_file
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
-  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
-  mkdir -p "$temp_dir/state" "$authorized_keys_dir"
+  authorized_keys_file="$(managed_authorized_keys_file "$temp_dir")"
+  mkdir -p "$temp_dir/state" "$(dirname "$authorized_keys_file")"
   : > "$temp_dir/state/defaults.log"
   : > "$temp_dir/state/pmset.log"
   : > "$temp_dir/state/sudo.log"
@@ -1299,8 +1297,7 @@ test_ssh_key_sync_removes_stale_managed_keys_not_in_current_config() {
   : > "$temp_dir/state/systemsetup.log"
   : > "$temp_dir/state/sshd.log"
   : > "$temp_dir/state/launchctl.log"
-  printf 'old-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
-  printf 'stale-key\n' > "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub"
+  printf '%s\n%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'stale-key' > "$authorized_keys_file"
   trap 'rm -rf "$temp_dir"' RETURN
 
   make_fake_repo "$temp_dir"
@@ -1316,23 +1313,23 @@ SSHD_LOGIN_KEY_FILES="maldoria-ipirus-ezirius-login.pub"'
     fail 'system-configure should remove stale managed SSH keys that are no longer configured'
   fi
 
-  assert_contains "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'keeps currently configured managed key'
-  [[ ! -e "$authorized_keys_dir/maldoria-iparia-ezirius-login.pub" ]] || fail 'removes stale managed key not present in current SSHD_LOGIN_KEY_FILES'
+  assert_contains "$authorized_keys_file" 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILI8TJ8jr2QiBXLPSxC3OqgRCjlfCFvDNQej4t0uey6t' 'keeps currently configured managed key in authorized_keys'
+  assert_not_contains "$authorized_keys_file" 'stale-key' 'removes stale managed key content not present in current SSHD_LOGIN_KEY_FILES'
 }
 
 test_ssh_disabled_removes_managed_files() {
   local temp_dir
   local output_file
   local sshd_config_path
-  local authorized_keys_dir
+  local authorized_keys_file
   local log_file
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
   sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
-  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
+  authorized_keys_file="$(managed_authorized_keys_file "$temp_dir")"
   log_file="$temp_dir/logs/macos/shared/installations-and-configurations-maldoria.csv"
-  mkdir -p "$temp_dir/state" "$authorized_keys_dir" "$(dirname "$sshd_config_path")"
+  mkdir -p "$temp_dir/state" "$(dirname "$authorized_keys_file")" "$(dirname "$sshd_config_path")"
   : > "$temp_dir/state/defaults.log"
   : > "$temp_dir/state/pmset.log"
   : > "$temp_dir/state/sudo.log"
@@ -1341,7 +1338,7 @@ test_ssh_disabled_removes_managed_files() {
   : > "$temp_dir/state/sshd.log"
   : > "$temp_dir/state/launchctl.log"
   printf 'old-config\n' > "$sshd_config_path"
-  printf 'old-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
+  printf 'old-key\n' > "$authorized_keys_file"
   trap 'rm -rf "$temp_dir"' RETURN
 
   make_fake_repo "$temp_dir"
@@ -1357,7 +1354,7 @@ test_ssh_disabled_removes_managed_files() {
 
   assert_contains "$temp_dir/state/systemsetup.log" '-setremotelogin off' 'disables Remote Login when SSH is disabled'
   [[ ! -e "$sshd_config_path" ]] || fail 'removes the managed sshd drop-in when SSH is disabled'
-  [[ ! -e "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub" ]] || fail 'removes the managed authorized key file when SSH is disabled'
+  [[ ! -e "$authorized_keys_file" ]] || fail 'removes the managed authorized_keys file when SSH is disabled'
   assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-remote-login,' 'logs the Remote Login disablement change'
   assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-config,' 'logs the sshd config removal'
   assert_contains "$log_file" '20260427,143015,maldoria,Configured,system-sshd-authorized-key,' 'logs the authorized key removal'
@@ -1367,13 +1364,13 @@ test_ssh_key_sync_does_not_reload_sshd_when_drop_in_is_unchanged() {
   local temp_dir
   local output_file
   local sshd_config_path
-  local authorized_keys_dir
+  local authorized_keys_file
 
   temp_dir="$(mktemp -d)"
   output_file="$temp_dir/output.log"
   sshd_config_path="$(managed_sshd_config_path "$temp_dir")"
-  authorized_keys_dir="$(managed_authorized_keys_dir "$temp_dir")"
-  mkdir -p "$temp_dir/state" "$authorized_keys_dir" "$(dirname "$sshd_config_path")"
+  authorized_keys_file="$(managed_authorized_keys_file "$temp_dir")"
+  mkdir -p "$temp_dir/state" "$(dirname "$authorized_keys_file")" "$(dirname "$sshd_config_path")"
   : > "$temp_dir/state/defaults.log"
   : > "$temp_dir/state/pmset.log"
   : > "$temp_dir/state/sudo.log"
@@ -1402,11 +1399,11 @@ X11Forwarding no
 AllowTcpForwarding no
 AllowAgentForwarding no
 AllowUsers ezirius
-AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/*
+AuthorizedKeysFile .ssh/authorized_keys
 EOF
   printf 'ed-private\n' > "$(host_key_path "$temp_dir" 'ssh_host_ed25519_key')"
   printf 'ed-public\n' > "$(host_key_path "$temp_dir" 'ssh_host_ed25519_key').pub"
-  printf 'stale-key\n' > "$authorized_keys_dir/maldoria-ipirus-ezirius-login.pub"
+  printf 'stale-key\n' > "$authorized_keys_file"
 
   if ! TEST_REMOTE_LOGIN_CURRENT=On TEST_DEFAULTS_AUTO_HIDE_CURRENT=1 TEST_DEFAULTS_MRU_SPACES_CURRENT=0 TEST_PMSET_CURRENT_SLEEP=0 TEST_PMSET_PORTABLE=0 run_in_fake_repo "$temp_dir" "$output_file"; then
     cat "$output_file" >&2
