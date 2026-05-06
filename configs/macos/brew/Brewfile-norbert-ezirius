@@ -17,7 +17,7 @@
 
 # CLI tools
 # brew "bash"
-# brew "mosh"
+brew "mosh"
 # brew "nushell"
 
 # brew "opencode"
